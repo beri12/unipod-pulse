@@ -26,10 +26,12 @@ import {
   DATE_PATTERN,
   DEADLINE_CUES,
   DECISION_CUES,
+  extractKeyStatements,
   HEDGE_CUES,
   URGENT_CUES,
+  type KeyStatement,
 } from '../cues';
-import { contentTokens, splitSentences } from '../text';
+import { contentTokens, isStopword, splitSentences, stem } from '../text';
 
 /**
  * Offline, deterministic AI provider.
@@ -249,30 +251,33 @@ export class LocalProvider
       .slice(0, 3)
       .sort((a, b) => a.sentence.startTime - b.sentence.startTime);
 
-    const decisions = sentences
-      .filter((sentence) => DECISION_CUES.test(sentence.text))
-      .slice(0, 8)
-      .map((sentence) => ({ text: sentence.text, startTime: Math.round(sentence.startTime) }));
+    // One shared extractor for decisions, actions, deadlines and open
+    // questions, so the summary and the searchable index agree on what the
+    // meeting decided — and so a question is never listed as a decision.
+    const statements = extractKeyStatements(segments);
+    const of = (kind: KeyStatement['kind']) =>
+      statements.filter((statement) => statement.kind === kind);
 
-    const actionItems = sentences
-      .filter((sentence) => ACTION_CUES.test(sentence.text) && !DECISION_CUES.test(sentence.text))
+    const decisions = of('decision')
+      .slice(0, 8)
+      .map((statement) => ({ text: statement.text, startTime: Math.round(statement.startTime) }));
+
+    const actionItems = of('action')
       .slice(0, 10)
-      .map((sentence) => ({
-        text: sentence.text,
-        owner: extractOwner(sentence),
-        due: extractDate(sentence.text),
-        startTime: Math.round(sentence.startTime),
+      .map((statement) => ({
+        text: statement.text,
+        owner: extractOwner(statement),
+        due: extractDate(statement.text),
+        startTime: Math.round(statement.startTime),
       }));
 
-    const deadlines = sentences
-      .filter((sentence) => DEADLINE_CUES.test(sentence.text) && DATE_PATTERN.test(sentence.text))
+    const deadlines = of('deadline')
       .slice(0, 6)
-      .map((sentence) => ({ text: sentence.text, date: extractDate(sentence.text) }));
+      .map((statement) => ({ text: statement.text, date: extractDate(statement.text) }));
 
-    const openQuestions = sentences
-      .filter((sentence) => sentence.text.trim().endsWith('?'))
+    const openQuestions = of('question')
       .slice(0, 6)
-      .map((sentence) => sentence.text);
+      .map((statement) => statement.text);
 
     const keyMoments = [...decisions, ...actionItems]
       .slice(0, 6)
@@ -297,7 +302,12 @@ export class LocalProvider
 
   async generateCatchUp(input: CatchUpInput): Promise<CatchUpOutput> {
     const importance = input.items.map((item) => {
-      if (item.type === 'announcement' || URGENT_CUES.test(item.content)) return 'high' as const;
+      if (item.type === 'announcement') return 'high' as const;
+      // A passing "today" is not urgency. Ordinary discussion only rates high
+      // when it actually carries a deadline or a required action, and a
+      // question is never itself an update.
+      const isQuestion = item.content.trim().endsWith('?');
+      if (!isQuestion && URGENT_CUES.test(item.content)) return 'high' as const;
       if (item.type === 'meeting' || item.type === 'document') return 'medium' as const;
       return 'low' as const;
     });
@@ -614,24 +624,45 @@ function centralityScore(sentence: string, idf: Map<string, number>): number {
   return score / Math.sqrt(tokens.length);
 }
 
+/**
+ * Most distinctive terms, shown as topic chips.
+ *
+ * Scoring happens on stems so "retrieval" and "retrievals" count together, but
+ * the label is the most common word people actually wrote — a chip reading
+ * "Decid" would be an implementation detail leaking into the interface.
+ */
 function topTopics(sentences: string[], idf: Map<string, number>, limit: number): string[] {
   const counts = new Map<string, number>();
+  const surfaceForms = new Map<string, Map<string, number>>();
+
   for (const sentence of sentences) {
-    for (const term of contentTokens(sentence)) {
+    for (const word of sentence.split(/[^A-Za-z0-9']+/)) {
+      if (word.length < 5) continue;
+      const lower = word.toLowerCase();
+      if (isStopword(lower)) continue;
+      const term = stem(lower);
       if (term.length < 4) continue;
       counts.set(term, (counts.get(term) ?? 0) + (idf.get(term) ?? 1));
+      const forms = surfaceForms.get(term) ?? new Map<string, number>();
+      forms.set(lower, (forms.get(lower) ?? 0) + 1);
+      surfaceForms.set(term, forms);
     }
   }
+
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
-    .map(([term]) => term.charAt(0).toUpperCase() + term.slice(1));
+    .map(([term]) => {
+      const forms = [...(surfaceForms.get(term) ?? new Map())].sort((a, b) => b[1] - a[1]);
+      const label = (forms[0]?.[0] as string | undefined) ?? term;
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    });
 }
 
-function extractOwner(sentence: TimedSentence): string | null {
-  const named = sentence.text.match(/\b([A-Z][a-z]{2,})\s+(?:will|is going to|to)\b/);
+function extractOwner(statement: { text: string; speaker: string | null }): string | null {
+  const named = statement.text.match(/\b([A-Z][a-z]{2,})\s+(?:will|is going to|to)\b/);
   if (named) return named[1] ?? null;
-  return sentence.speaker;
+  return statement.speaker;
 }
 
 function extractDate(text: string): string | null {

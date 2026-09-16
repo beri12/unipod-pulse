@@ -25,10 +25,15 @@ export interface RetrievalOutcome {
   retrievalMs: number;
 }
 
+/** A cited chunk, tagged with the bracket number the answer used for it. */
+export interface CitedChunk extends RankedChunk {
+  contextIndex: number;
+}
+
 export interface GroundedAnswer {
   answer: string;
   /** Chunks the answer actually cited, in citation order. */
-  cited: RankedChunk[];
+  cited: CitedChunk[];
   diagnostics: AnswerDiagnostics;
 }
 
@@ -111,10 +116,15 @@ export class RagService {
     const generationMs = Date.now() - generationStarted;
 
     // In the order the answer cited them, so downstream citation cards follow
-    // the reading order of the answer rather than the retrieval score.
+    // the reading order of the answer rather than the retrieval score. The
+    // original bracket number travels with each chunk so the answer text can be
+    // renumbered to match the cards a reader actually sees.
     const cited = result.citedIndexes
-      .map((index) => retrieval.chunks[index - 1])
-      .filter((chunk): chunk is RankedChunk => Boolean(chunk));
+      .map((index) => {
+        const chunk = retrieval.chunks[index - 1];
+        return chunk ? { ...chunk, contextIndex: index } : null;
+      })
+      .filter((chunk): chunk is CitedChunk => chunk !== null);
 
     const answered = result.answered && cited.length > 0;
     const diagnostics: AnswerDiagnostics = {

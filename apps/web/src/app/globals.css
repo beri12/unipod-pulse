@@ -1,0 +1,26 @@
+@import "tailwindcss";
+@import "@unipods/ui/styles.css";
+
+/* Tailwind v4 discovers utility classes by scanning sources; the design-system
+   package lives outside this app's directory, so it is registered explicitly. */
+@source "../../../../packages/ui/src";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Full-height app shell without the iOS 100vh problem. */
+html,
+body {
+  min-height: 100dvh;
+}
+
+/* Citation highlighting from the search API's escaped snippets. */
+mark {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+  border-radius: 2px;
+  padding: 0 2px;
+}

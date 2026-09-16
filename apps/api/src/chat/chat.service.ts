@@ -14,7 +14,7 @@ import { StructuredLogger } from '../common/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuestionsService } from '../questions/questions.service';
 import type { RankedChunk } from '../rag/ranking.service';
-import { RagService } from '../rag/rag.service';
+import { RagService, type CitedChunk } from '../rag/rag.service';
 import { toSourceRef } from '../sources/sources.service';
 
 /** How much of a chunk is kept as the verbatim excerpt on a citation card. */
@@ -71,7 +71,18 @@ export class ChatService {
       },
     });
 
-    const citations = await this.persistCitations(assistantMessage.id, result.cited);
+    const { citations, content } = await this.persistCitations(
+      assistantMessage.id,
+      result.answer,
+      result.cited,
+    );
+
+    if (content !== result.answer) {
+      await this.prisma.chatMessage.update({
+        where: { id: assistantMessage.id },
+        data: { content },
+      });
+    }
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
@@ -102,7 +113,7 @@ export class ChatService {
         id: assistantMessage.id,
         conversationId: conversation.id,
         role: 'ASSISTANT',
-        content: assistantMessage.content,
+        content,
         createdAt: assistantMessage.createdAt.toISOString(),
         citations,
         diagnostics: result.diagnostics,
@@ -124,25 +135,33 @@ export class ChatService {
    */
   private async persistCitations(
     chatMessageId: string,
-    cited: RankedChunk[],
-  ): Promise<Citation[]> {
-    if (cited.length === 0) return [];
+    answer: string,
+    cited: CitedChunk[],
+  ): Promise<{ citations: Citation[]; content: string }> {
+    if (cited.length === 0) return { citations: [], content: stripCitationMarkers(answer) };
 
     // Order follows the answer, not the retrieval score: the cards a reader
     // checks first should be the passages the answer leaned on first.
-    const seenLocations = new Set<string>();
+    const locationToCard = new Map<string, number>();
     const perSource = new Map<string, number>();
-    const selected: RankedChunk[] = [];
+    const selected: CitedChunk[] = [];
+    /** Bracket number used by the answer -> position of the card it maps to. */
+    const renumber = new Map<number, number>();
 
     for (const chunk of cited) {
       const key = `${chunk.sourceId}:${locationKey(chunk)}`;
-      if (seenLocations.has(key)) continue;
+      const existingCard = locationToCard.get(key);
+      if (existingCard !== undefined) {
+        renumber.set(chunk.contextIndex, existingCard);
+        continue;
+      }
       const used = perSource.get(chunk.sourceId) ?? 0;
-      if (used >= MAX_CITATIONS_PER_SOURCE) continue;
-      seenLocations.add(key);
+      if (used >= MAX_CITATIONS_PER_SOURCE || selected.length >= MAX_CITATIONS) continue;
       perSource.set(chunk.sourceId, used + 1);
       selected.push(chunk);
-      if (selected.length >= MAX_CITATIONS) break;
+      const card = selected.length;
+      locationToCard.set(key, card);
+      renumber.set(chunk.contextIndex, card);
     }
 
     const rows = await this.prisma.$transaction(
@@ -165,16 +184,19 @@ export class ChatService {
       ),
     );
 
-    return rows.map((row) => ({
-      id: row.id,
-      sourceId: row.sourceId,
-      title: row.source.title,
-      type: row.source.type,
-      quote: row.quote,
-      score: row.score,
-      metadata: (row.metadata ?? {}) as SourceLocator,
-      source: toSourceRef(row.source),
-    }));
+    return {
+      citations: rows.map((row) => ({
+        id: row.id,
+        sourceId: row.sourceId,
+        title: row.source.title,
+        type: row.source.type,
+        quote: row.quote,
+        score: row.score,
+        metadata: (row.metadata ?? {}) as SourceLocator,
+        source: toSourceRef(row.source),
+      })),
+      content: applyRenumbering(answer, renumber),
+    };
   }
 
   private async recentHistory(
@@ -266,6 +288,30 @@ export class ChatService {
     }
     return conversation;
   }
+}
+
+/**
+ * Rewrites the answer's bracket markers to match the citation cards shown.
+ *
+ * The model (or the extractive answerer) cites by position in the retrieved
+ * context, but the reader sees a shorter, deduplicated list of cards. Without
+ * this, "[6]" would point at nothing. Markers whose evidence did not make the
+ * final list are removed rather than left dangling.
+ */
+export function applyRenumbering(answer: string, renumber: Map<number, number>): string {
+  return answer
+    .replace(/\[(\d+)\]/g, (_match, group: string) => {
+      const card = renumber.get(Number.parseInt(group, 10));
+      return card === undefined ? '' : `[${card}]`;
+    })
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ ([.,;:])/g, '$1')
+    .trimEnd();
+}
+
+/** Removes every bracket marker, for an answer that ended up with no cards. */
+export function stripCitationMarkers(answer: string): string {
+  return applyRenumbering(answer, new Map());
 }
 
 /** Identifies where in a source a chunk sits, for citation deduplication. */

@@ -2,7 +2,7 @@
   "name": "unipods-pulse",
   "version": "0.1.0",
   "private": true,
-  "description": "UniPods Pulse \u2014 your community. One intelligent memory.",
+  "description": "UniPods Pulse — your community. One intelligent memory.",
   "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -35,6 +35,7 @@
     "@types/node": "^22.10.2",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
+    "playwright": "^1.63.0",
     "prettier": "^3.4.2",
     "prisma": "7.10.0",
     "rimraf": "^6.0.1",

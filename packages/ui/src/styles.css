@@ -1,0 +1,151 @@
+/*
+ * UniPods Pulse design tokens.
+ *
+ * One neutral ramp plus a single accent, defined as CSS custom properties so
+ * light and dark are the same components with different values. Contrast pairs
+ * were chosen to clear WCAG AA for body text in both themes.
+ */
+@layer theme {
+  :root {
+    --background: oklch(99% 0.003 250);
+    --foreground: oklch(21% 0.02 260);
+
+    --card: oklch(100% 0 0);
+    --card-foreground: var(--foreground);
+
+    --muted: oklch(96.5% 0.005 255);
+    --muted-foreground: oklch(48% 0.015 260);
+
+    --border: oklch(91% 0.008 255);
+    --input: oklch(89% 0.01 255);
+    --ring: oklch(58% 0.14 258);
+
+    --primary: oklch(52% 0.16 262);
+    --primary-foreground: oklch(99% 0.005 250);
+
+    --accent: oklch(95% 0.02 262);
+    --accent-foreground: oklch(35% 0.12 262);
+
+    --destructive: oklch(55% 0.19 27);
+    --destructive-foreground: oklch(99% 0.005 250);
+
+    --success: oklch(52% 0.13 155);
+    --success-foreground: oklch(99% 0.005 250);
+
+    --warning: oklch(70% 0.15 75);
+    --warning-foreground: oklch(25% 0.06 75);
+
+    --radius: 0.7rem;
+  }
+
+  .dark {
+    --background: oklch(17% 0.015 265);
+    --foreground: oklch(96% 0.005 250);
+
+    --card: oklch(21% 0.018 265);
+    --card-foreground: var(--foreground);
+
+    --muted: oklch(26% 0.018 265);
+    --muted-foreground: oklch(72% 0.015 260);
+
+    --border: oklch(30% 0.018 265);
+    --input: oklch(34% 0.02 265);
+    --ring: oklch(66% 0.14 258);
+
+    --primary: oklch(70% 0.14 260);
+    --primary-foreground: oklch(17% 0.02 265);
+
+    --accent: oklch(30% 0.045 262);
+    --accent-foreground: oklch(88% 0.05 262);
+
+    --destructive: oklch(62% 0.18 27);
+    --destructive-foreground: oklch(17% 0.02 265);
+
+    --success: oklch(70% 0.14 155);
+    --success-foreground: oklch(17% 0.02 265);
+
+    --warning: oklch(78% 0.14 78);
+    --warning-foreground: oklch(20% 0.04 78);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Visible, consistent focus for keyboard users on every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
+}
+
+@layer utilities {
+  /* Content revealed as an answer streams in; respects reduced-motion. */
+  @keyframes unipods-rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-rise {
+    animation: unipods-rise 180ms ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-rise {
+      animation: none;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

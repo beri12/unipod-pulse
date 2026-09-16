@@ -18,8 +18,13 @@ export const DEADLINE_CUES =
 export const HEDGE_CUES =
   /\b(at the earliest|nothing was finalised|nothing was finalized|not final|tentative|proposed|suggested|might|maybe|we could|to be confirmed|tbc|tbd|draft)\b/i;
 
+/**
+ * Time pressure that genuinely changes what someone should do next. Bare
+ * "today" and "tomorrow" are excluded: they appear in ordinary chatter far too
+ * often to mark an update as important on their own.
+ */
 export const URGENT_CUES =
-  /\b(deadline|due|urgent|tomorrow|today|closes?|final|required|must|immediately|reminder)\b/i;
+  /\b(deadline|due (?:by|on|today|tomorrow|this)|urgent|closes?\s+(?:today|tomorrow|on)|final call|required|you must|immediately|reminder:|action required)\b/i;
 
 export const DATE_PATTERN =
   /\b(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|next week)\b/i;
