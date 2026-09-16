@@ -1,0 +1,407 @@
+// UniPods Pulse — data model
+// PostgreSQL + pgvector. Vector columns use Prisma's `Unsupported` escape hatch
+// and are read/written through parameterised raw SQL in @unipods/database.
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../packages/database/generated/client"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector, pg_trgm, unaccent]
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum DocumentType {
+  PDF
+  DOCX
+  TXT
+  MARKDOWN
+  WEB
+  OTHER
+}
+
+enum SourceKind {
+  DOCUMENT
+  MEETING
+  MESSAGE
+  ANNOUNCEMENT
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum QuestionStatus {
+  OPEN
+  ANSWERED
+  IGNORED
+}
+
+// ---------------------------------------------------------------------------
+// Users & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String
+  avatarUrl    String?
+  role         Role     @default(USER)
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  documents     Document[]
+  meetings      Meeting[]
+  conversations Conversation[]
+  questionLogs  QuestionLog[]
+  refreshTokens RefreshToken[]
+
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+/// Hashed refresh tokens — enables logout and rotation/replay detection.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+
+model Document {
+  id               String           @id @default(uuid()) @db.Uuid
+  title            String
+  description      String?
+  type             DocumentType     @default(OTHER)
+  sourceType       SourceKind       @default(DOCUMENT)
+  originalFileName String?
+  storageKey       String?
+  mimeType         String?
+  fileSize         Int?
+  status           ProcessingStatus @default(PENDING)
+  statusMessage    String?
+  pageCount        Int?
+  publishedAt      DateTime?
+  isDemo           Boolean          @default(false)
+  createdById      String?          @db.Uuid
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  chunks    DocumentChunk[]
+  source    Source?
+
+  @@index([status])
+  @@index([sourceType])
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([publishedAt])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @db.Uuid
+  content    String
+  chunkIndex Int
+  tokenCount Int      @default(0)
+  metadata   Json     @default("{}")
+  /// vector(1536) — dimension is fixed by migration; see docs/rag.md
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@map("document_chunks")
+}
+
+// ---------------------------------------------------------------------------
+// Meetings
+// ---------------------------------------------------------------------------
+
+model Meeting {
+  id              String           @id @default(uuid()) @db.Uuid
+  title           String
+  description     String?
+  meetingDate     DateTime
+  durationSeconds Int?
+  storageKey      String?
+  originalFileName String?
+  mimeType        String?
+  fileSize        Int?
+  status          ProcessingStatus @default(PENDING)
+  statusMessage   String?
+  summary         Json?
+  isDemo          Boolean          @default(false)
+  createdById     String?          @db.Uuid
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  createdBy   User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  transcripts MeetingTranscript[]
+  chunks      MeetingChunk[]
+  source      Source?
+
+  @@index([status])
+  @@index([meetingDate])
+  @@index([createdAt])
+  @@index([createdById])
+  @@map("meetings")
+}
+
+model MeetingTranscript {
+  id        String   @id @default(uuid()) @db.Uuid
+  meetingId String   @db.Uuid
+  speaker   String?
+  content   String
+  /// Seconds from the start of the recording.
+  startTime Float
+  endTime   Float
+  sequence  Int
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, sequence])
+  @@index([meetingId])
+  @@index([startTime])
+  @@map("meeting_transcripts")
+}
+
+/// Embedded windows over a meeting transcript — the unit retrieved by RAG.
+model MeetingChunk {
+  id         String   @id @default(uuid()) @db.Uuid
+  meetingId  String   @db.Uuid
+  content    String
+  chunkIndex Int
+  tokenCount Int      @default(0)
+  startTime  Float
+  endTime    Float
+  metadata   Json     @default("{}")
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, chunkIndex])
+  @@index([meetingId])
+  @@map("meeting_chunks")
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+model Message {
+  id            String   @id @default(uuid()) @db.Uuid
+  externalId    String?
+  channel       String
+  authorName    String
+  authorId      String?
+  content       String
+  messageDate   DateTime
+  replyToId     String?  @db.Uuid
+  isAnnouncement Boolean @default(false)
+  metadata      Json     @default("{}")
+  isDemo        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  replyTo  Message?       @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies  Message[]      @relation("MessageReplies")
+  chunks   MessageChunk[]
+  source   Source?
+
+  @@unique([channel, externalId])
+  @@index([messageDate])
+  @@index([channel])
+  @@index([authorId])
+  @@index([isAnnouncement])
+  @@map("messages")
+}
+
+/// A message chunk usually spans several consecutive messages from the same
+/// channel so that short chat lines carry enough context to be retrievable.
+model MessageChunk {
+  id         String   @id @default(uuid()) @db.Uuid
+  messageId  String   @db.Uuid
+  content    String
+  chunkIndex Int      @default(0)
+  tokenCount Int      @default(0)
+  metadata   Json     @default("{}")
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_chunks")
+}
+
+// ---------------------------------------------------------------------------
+// Normalised sources & citations
+// ---------------------------------------------------------------------------
+
+/// One row per citable thing in the knowledge base. Chunk retrieval always
+/// resolves to a Source, which is what a citation points at.
+model Source {
+  id          String     @id @default(uuid()) @db.Uuid
+  type        SourceKind
+  title       String
+  referenceId String     @db.Uuid
+  url         String?
+  authorName  String?
+  occurredAt  DateTime?
+  metadata    Json       @default("{}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  document  Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String?  @unique @db.Uuid
+  meeting   Meeting?  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId String?   @unique @db.Uuid
+  message   Message?  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String?   @unique @db.Uuid
+
+  citations ChatCitation[]
+
+  @@unique([type, referenceId])
+  @@index([type])
+  @@index([occurredAt])
+  @@map("sources")
+}
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  title     String   @default("New conversation")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+  questionLogs QuestionLog[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("conversations")
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @db.Uuid
+  role           ChatRole
+  content        String
+  /// Retrieval diagnostics: timings, scores, model used. Never user secrets.
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  conversation Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  citations    ChatCitation[]
+
+  @@index([conversationId, createdAt])
+  @@map("chat_messages")
+}
+
+model ChatCitation {
+  id            String   @id @default(uuid()) @db.Uuid
+  chatMessageId String   @db.Uuid
+  sourceId      String   @db.Uuid
+  /// Verbatim excerpt from the retrieved chunk — never model-generated text.
+  quote         String?
+  score         Float    @default(0)
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  chatMessage ChatMessage @relation(fields: [chatMessageId], references: [id], onDelete: Cascade)
+  source      Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([chatMessageId])
+  @@index([sourceId])
+  @@map("chat_citations")
+}
+
+// ---------------------------------------------------------------------------
+// Question analytics
+// ---------------------------------------------------------------------------
+
+model UnansweredQuestion {
+  id                 String         @id @default(uuid()) @db.Uuid
+  question           String
+  normalizedQuestion String         @unique
+  count              Int            @default(1)
+  lastAskedAt        DateTime       @default(now())
+  status             QuestionStatus @default(OPEN)
+  resolutionNote     String?
+  /// Embedding of the normalised question; used to group paraphrases.
+  embedding          Unsupported("vector(1536)")?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([status])
+  @@index([lastAskedAt])
+  @@index([count])
+  @@map("unanswered_questions")
+}
+
+model QuestionLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String?  @db.Uuid
+  conversationId String?  @db.Uuid
+  question       String
+  answered       Boolean  @default(false)
+  confidence     Float    @default(0)
+  latencyMs      Int?
+  createdAt      DateTime @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([answered])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("question_logs")
+}
