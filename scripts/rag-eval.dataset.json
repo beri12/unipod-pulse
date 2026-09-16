@@ -1,0 +1,161 @@
+{
+  "_note": "Evaluation set for the seeded demo community (prisma/demo). Run `pnpm db:seed` first. Expectations were written from the demo content. `expectedSourceTitles` lists every source that genuinely states the answer; citing any one of them is correct.",
+  "cases": [
+    {
+      "id": "deadline-declaration",
+      "question": "When is the team declaration deadline?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines",
+        "Announcement in announcements",
+        "Hackathon Kickoff"
+      ],
+      "mustContain": [
+        "September 17"
+      ],
+      "mustNotContain": [
+        "September 18 is the deadline"
+      ]
+    },
+    {
+      "id": "deadline-paraphrase",
+      "question": "What day do we have to declare our team by?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines",
+        "Announcement in announcements",
+        "Hackathon Kickoff"
+      ],
+      "mustContain": []
+    },
+    {
+      "id": "submission-close",
+      "question": "When do final submissions close?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines"
+      ],
+      "mustContain": [
+        "23:59"
+      ]
+    },
+    {
+      "id": "judging-criteria",
+      "question": "What are the judging criteria and how many points is each worth?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines"
+      ],
+      "mustContain": [
+        "40"
+      ]
+    },
+    {
+      "id": "team-size",
+      "question": "How many people can be on a team?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines",
+        "Hackathon Kickoff",
+        "general · Chidi Nwosu"
+      ],
+      "mustContain": [],
+      "_note": "Team size is stated in the guidelines, in the kickoff meeting and in the general channel, so any of the three is a correct source. The chat source is the message window anchored on Chidi's question, which contains Tunde's answer."
+    },
+    {
+      "id": "architecture-decision",
+      "question": "What did we decide about the AI architecture?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "AI Architecture Meeting"
+      ],
+      "mustContain": [
+        "retrieval-augmented generation"
+      ]
+    },
+    {
+      "id": "action-items",
+      "question": "What action items came out of the AI architecture meeting?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "AI Architecture Meeting"
+      ],
+      "mustContain": [
+        "ingestion pipeline"
+      ]
+    },
+    {
+      "id": "submission-requirements",
+      "question": "What has to be included in a submission?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines",
+        "AI Challenge Brief"
+      ],
+      "mustContain": []
+    },
+    {
+      "id": "office-hours",
+      "question": "When are mentor office hours?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "Hackathon Guidelines",
+        "Announcement in announcements",
+        "Hackathon Kickoff"
+      ],
+      "mustContain": [
+        "16:00"
+      ]
+    },
+    {
+      "id": "compute-credits",
+      "question": "How much compute credit does each member get?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "UniPods Program Guide",
+        "general · Chidi Nwosu"
+      ],
+      "mustContain": [
+        "100"
+      ]
+    },
+    {
+      "id": "pod-attendance",
+      "question": "How many pod calls do members have to attend?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "UniPods Program Guide"
+      ],
+      "mustContain": []
+    },
+    {
+      "id": "ai-track-requirements",
+      "question": "What does the AI track require entries to do?",
+      "expectAnswered": true,
+      "expectedSourceTitles": [
+        "AI Challenge Brief"
+      ],
+      "mustContain": []
+    },
+    {
+      "id": "unanswerable-prizes",
+      "question": "How much prize money does the winning team receive?",
+      "expectAnswered": false
+    },
+    {
+      "id": "unanswerable-panel",
+      "question": "Who are the judges on the panel this year?",
+      "expectAnswered": false
+    },
+    {
+      "id": "unanswerable-travel",
+      "question": "Is there a travel stipend for demo day?",
+      "expectAnswered": false
+    },
+    {
+      "id": "unanswerable-unrelated",
+      "question": "What is the wifi password in the building?",
+      "expectAnswered": false
+    }
+  ]
+}

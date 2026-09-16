@@ -72,6 +72,8 @@ export function chunkSegments<M extends Record<string, unknown>>(
   if (sentences.length === 0) return [];
 
   const chunks: Array<Chunk<M>> = [];
+  /** Indexes of chunks that begin at a caller-forced boundary. */
+  const forcedStarts = new Set<number>();
   let current: Array<TaggedSentence<M>> = [];
   let currentTokens = 0;
 
@@ -99,6 +101,7 @@ export function chunkSegments<M extends Record<string, unknown>>(
       flush();
       // A forced break means the next chunk belongs to a different moment, so
       // carrying sentences across it would misattribute them.
+      if (forcedBreak) forcedStarts.add(chunks.length);
       current = forcedBreak ? [] : takeOverlap(current, overlapTokens);
       currentTokens = current.reduce((sum, entry) => sum + entry.tokens, 0);
     }
@@ -107,7 +110,7 @@ export function chunkSegments<M extends Record<string, unknown>>(
   }
   flush();
 
-  return mergeTinyTail(chunks, minTokens, targetTokens);
+  return mergeTinyTail(chunks, minTokens, targetTokens, forcedStarts);
 }
 
 /** Convenience wrapper for plain text with a single metadata bag. */
@@ -185,12 +188,16 @@ function mergeTinyTail<M extends Record<string, unknown>>(
   chunks: Array<Chunk<M>>,
   minTokens: number,
   targetTokens: number,
+  forcedStarts: ReadonlySet<number> = new Set(),
 ): Array<Chunk<M>> {
   if (chunks.length < 2) return chunks;
   const last = chunks[chunks.length - 1] as Chunk<M>;
   const previous = chunks[chunks.length - 2] as Chunk<M>;
   if (last.tokenCount >= minTokens) return chunks;
   if (previous.tokenCount + last.tokenCount > targetTokens * 1.5) return chunks;
+  // Merging across a forced boundary would put two different moments of a
+  // recording into one chunk, and hand the citation the wrong timestamp.
+  if (forcedStarts.has(chunks.length - 1)) return chunks;
 
   const content = `${previous.content} ${last.content}`.trim();
   const merged: Chunk<M> = {

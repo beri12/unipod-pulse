@@ -30,10 +30,16 @@ export function detectTranscriptFormat(fileName: string, content: string): Trans
   if (lower.endsWith('.vtt')) return 'vtt';
   if (lower.endsWith('.srt')) return 'srt';
   if (lower.endsWith('.json')) return 'json';
+  // An explicit .txt wins over content sniffing: a plain transcript beginning
+  // "[00:10] Amara: ..." starts with a bracket but is not JSON.
+  if (lower.endsWith('.txt') || lower.endsWith('.text')) return 'txt';
+
   const head = content.slice(0, 200).trim();
   if (head.startsWith('WEBVTT')) return 'vtt';
-  if (head.startsWith('[') || head.startsWith('{')) return 'json';
-  if (/^\d+\s*\r?\n\d{2}:\d{2}:\d{2},\d{3}\s*-->/m.test(content)) return 'srt';
+  if (/^\d+\s*\r?\n\d{1,2}:\d{2}:\d{2},\d{3}\s*-->/m.test(content)) return 'srt';
+  // Only treat it as JSON when the opening bracket is followed by something
+  // JSON-shaped, rather than by a timestamp.
+  if (/^\[\s*[{\["]/.test(head) || /^\{\s*"/.test(head)) return 'json';
   return 'txt';
 }
 

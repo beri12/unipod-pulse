@@ -178,14 +178,23 @@ export class LocalProvider
 
     const recency = buildRecencyWeights(context);
     const scored: ScoredSentence[] = [];
+    /** Best share of the question covered by a sentence that is not itself a question. */
+    let bestCoverage = 0;
+
     for (const item of context) {
       const itemWeight = recency.get(item.index) ?? 1;
       // The indexer's contextual header is retrieval scaffolding; quoting it
       // back would put words in the source's mouth.
       const sentences = splitSentences(stripContextHeader(item.content));
+      const titles = titleTerms(item);
       for (let i = 0; i < sentences.length; i += 1) {
         const sentence = sentences[i] as string;
-        const score = scoreSentence(sentence, queryTerms, idf, intent, titleTerms(item)) * itemWeight;
+        // Someone else asking the same thing is not evidence that answers it,
+        // so only statements can establish coverage.
+        if (!sentence.trim().endsWith('?')) {
+          bestCoverage = Math.max(bestCoverage, coverageOf(sentence, queryTerms, titles));
+        }
+        const score = scoreSentence(sentence, queryTerms, idf, intent, titles) * itemWeight;
         if (score <= 0) continue;
         // "Then it is decided." on its own tells the reader nothing, so a short
         // cue sentence is quoted together with the sentence that follows it.
@@ -200,9 +209,25 @@ export class LocalProvider
 
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
-    // Requires at least two distinct query terms' worth of evidence.
-    const threshold = 0.9;
-    if (!best || best.score < threshold) {
+
+    // The decisive test is coverage, not score: however strongly a sentence
+    // matches one word of the question, it cannot be the answer if it addresses
+    // only part of what was asked.
+    //
+    // Two rules, each with its own reason:
+    //   - at least half the question must be accounted for by a statement
+    //     (a question in the archive is not an answer to itself);
+    //   - if the question contains a substantial word the retrieved content has
+    //     never used, near-complete coverage of the rest is required before
+    //     answering. "Is there a travel stipend for demo day?" must not be
+    //     answered by a source that only knows when demo day is.
+    //
+    // A single-term question is exempt, where coverage is all or nothing.
+    const unseen = unseenQuestionTerms(queryTerms, context);
+    const coverageFloor =
+      queryTerms.size < 2 ? 0 : unseen.size > 0 ? COVERAGE_WITH_UNSEEN_TERM : MIN_QUESTION_COVERAGE;
+
+    if (!best || best.score < MIN_EVIDENCE_SCORE || bestCoverage < coverageFloor) {
       return { answer: NO_ANSWER_SENTENCE, citedIndexes: [], answered: false, conflicting: false };
     }
 
@@ -356,6 +381,18 @@ type Intent = 'when' | 'who' | 'decision' | 'howmany' | 'general';
 /** Header the indexer prepends to a chunk: `[Title · locator]` on its own line. */
 const CONTEXT_HEADER = /^\[[^\]\n]{1,200}\]\n/;
 
+/**
+ * Share of the question's meaning-bearing words that a statement must cover
+ * before any answer is offered.
+ */
+const MIN_QUESTION_COVERAGE = 0.5;
+/** The bar when the question uses a word the retrieved content never uses. */
+const COVERAGE_WITH_UNSEEN_TERM = 0.75;
+/** Retrieved chunks needed before absence counts as evidence of absence. */
+const MIN_CONTEXT_FOR_ABSENCE = 4;
+/** Floor on raw match strength, so one incidental word is never enough. */
+const MIN_EVIDENCE_SCORE = 0.9;
+
 function stripContextHeader(content: string): string {
   return content.replace(CONTEXT_HEADER, '');
 }
@@ -400,6 +437,52 @@ function buildIdf(documents: string[]): Map<string, number> {
     idf.set(term, Math.log(1 + total / count));
   }
   return idf;
+}
+
+/**
+ * How much of the question a sentence accounts for.
+ *
+ * A term found only in the source's title counts half — real evidence of
+ * relevance, but weaker than the sentence itself saying it.
+ */
+function coverageOf(
+  sentence: string,
+  queryTerms: Set<string>,
+  sourceTitleTerms: Set<string>,
+): number {
+  if (queryTerms.size === 0) return 0;
+  const tokens = new Set(contentTokens(sentence));
+  let matched = 0;
+  for (const term of queryTerms) {
+    if (tokens.has(term)) matched += 1;
+    else if (sourceTitleTerms.has(term)) matched += 0.5;
+  }
+  return matched / queryTerms.size;
+}
+
+/**
+ * Words of the question that appear nowhere in the retrieved context.
+ *
+ * Absence is only meaningful once enough has been read, and only for
+ * substantial words — a four-letter connective missing from eight chunks says
+ * nothing, while "stipend" missing from all of them says the community has
+ * never written about it.
+ */
+function unseenQuestionTerms(
+  queryTerms: Set<string>,
+  context: GroundedContextItem[],
+): Set<string> {
+  const unseen = new Set<string>();
+  if (context.length < MIN_CONTEXT_FOR_ABSENCE) return unseen;
+
+  const seen = new Set<string>();
+  for (const item of context) {
+    for (const token of contentTokens(`${item.title} ${item.content}`)) seen.add(token);
+  }
+  for (const term of queryTerms) {
+    if (term.length >= 5 && !seen.has(term)) unseen.add(term);
+  }
+  return unseen;
 }
 
 function titleTerms(item: GroundedContextItem): Set<string> {

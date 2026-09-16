@@ -19,6 +19,9 @@ interface MeetingChunkMetadata extends Record<string, unknown> {
   speaker?: string;
 }
 
+/** A PROCESSING claim older than this is treated as abandoned. */
+const STALE_CLAIM_MS = 15 * 60 * 1000;
+
 /** A transcript chunk covers at most this much of the recording. */
 const MAX_CHUNK_SPAN_SECONDS = 180;
 /** A pause longer than this ends a chunk: the conversation moved on. */
@@ -133,10 +136,27 @@ export async function processMeeting(deps: IngestDeps, meetingId: string): Promi
   }
 
   try {
-    await prisma.meeting.update({
-      where: { id: meetingId },
+    // Same claim as documents: concurrent runs would collide on
+    // (meetingId, chunkIndex). See document.pipeline.ts.
+    const claimed = await prisma.meeting.updateMany({
+      where: {
+        id: meetingId,
+        OR: [
+          { status: { not: 'PROCESSING' } },
+          { updatedAt: { lt: new Date(Date.now() - STALE_CLAIM_MS) } },
+        ],
+      },
       data: { status: 'PROCESSING', statusMessage: 'Summarising and indexing…' },
     });
+    if (claimed.count === 0) {
+      logger.info('meeting already being processed', { meetingId });
+      return {
+        ok: true,
+        chunks: 0,
+        embedded: 0,
+        message: 'Another processor is already working on this meeting.',
+      };
+    }
 
     const transcript = await prisma.meetingTranscript.findMany({
       where: { meetingId },

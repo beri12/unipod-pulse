@@ -4,6 +4,9 @@ import { setDocumentChunkEmbeddings } from '@unipods/database';
 import { noopLogger, type IngestDeps, type PipelineResult } from './deps';
 import { DocumentExtractionError, resolveParser } from './parsers';
 
+/** A PROCESSING claim older than this is treated as abandoned. */
+const STALE_CLAIM_MS = 15 * 60 * 1000;
+
 interface DocumentChunkMetadata extends Record<string, unknown> {
   source: 'document';
   page?: number;
@@ -33,10 +36,30 @@ export async function processDocument(
     return { ok: false, chunks: 0, embedded: 0, message: 'No stored file.' };
   }
 
-  await prisma.document.update({
-    where: { id: documentId },
+  // Claim the document before doing any work. Two processors running at once —
+  // a queue retry racing a manual reprocess, say — would each delete the
+  // other's chunks halfway through and collide on (documentId, chunkIndex).
+  // A stale claim is reclaimable so a crashed worker cannot block the document
+  // forever.
+  const claimed = await prisma.document.updateMany({
+    where: {
+      id: documentId,
+      OR: [
+        { status: { not: 'PROCESSING' } },
+        { updatedAt: { lt: new Date(Date.now() - STALE_CLAIM_MS) } },
+      ],
+    },
     data: { status: 'PROCESSING', statusMessage: null },
   });
+  if (claimed.count === 0) {
+    logger.info('document already being processed', { documentId });
+    return {
+      ok: true,
+      chunks: 0,
+      embedded: 0,
+      message: 'Another processor is already working on this document.',
+    };
+  }
 
   try {
     const buffer = await storage.download(document.storageKey);

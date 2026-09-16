@@ -46,7 +46,10 @@ export function stem(token: string): string {
   if (token.length <= 4) return token;
   let out = token;
 
-  // Pass 1: plurals.
+  // Pass 1: nominalisations, then plurals. "declaration" and "declare" have to
+  // meet, or a question about declaring a team misses the sentence about
+  // declarations.
+  out = applyRule(out, /ations?$/, '');
   out = applyRule(out, /ies$/, 'y');
   out = applyRule(out, /(ss|sh|ch|x|z)es$/, '$1');
   out = applyRule(out, /([^s])s$/, '$1');
