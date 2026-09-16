@@ -17,6 +17,12 @@ importers:
       '@unipods/database':
         specifier: workspace:*
         version: link:packages/database
+      '@unipods/ingest':
+        specifier: workspace:*
+        version: link:packages/ingest
+      '@unipods/types':
+        specifier: workspace:*
+        version: link:packages/types
     devDependencies:
       '@prisma/adapter-pg':
         specifier: 7.10.0
@@ -24,9 +30,15 @@ importers:
       '@prisma/client':
         specifier: 7.10.0
         version: 7.10.0(prisma@7.10.0(@types/react@19.3.0)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3))(typescript@5.9.3)
+      '@types/bcryptjs':
+        specifier: ^2.4.6
+        version: 2.4.6
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.3
+      bcryptjs:
+        specifier: ^2.4.3
+        version: 2.4.3
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1

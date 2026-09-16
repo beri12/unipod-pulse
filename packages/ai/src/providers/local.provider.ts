@@ -20,6 +20,15 @@ import type {
   MeetingSummaryInput,
   StructuredProvider,
 } from '../structured';
+import {
+  ACTION_CUES,
+  CALENDAR_DATE_PATTERN,
+  DATE_PATTERN,
+  DEADLINE_CUES,
+  DECISION_CUES,
+  HEDGE_CUES,
+  URGENT_CUES,
+} from '../cues';
 import { contentTokens, splitSentences } from '../text';
 
 /**
@@ -162,16 +171,28 @@ export class LocalProvider
     }
 
     const queryTerms = new Set(contentTokens(question));
-    const idf = buildIdf(context.map((item) => item.content));
+    const idf = buildIdf(context.map((item) => stripContextHeader(item.content)));
     const intent = classifyIntent(question);
 
     const recency = buildRecencyWeights(context);
     const scored: ScoredSentence[] = [];
     for (const item of context) {
       const itemWeight = recency.get(item.index) ?? 1;
-      for (const sentence of splitSentences(item.content)) {
-        const score = scoreSentence(sentence, queryTerms, idf, intent) * itemWeight;
-        if (score > 0) scored.push({ sentence, score, item });
+      // The indexer's contextual header is retrieval scaffolding; quoting it
+      // back would put words in the source's mouth.
+      const sentences = splitSentences(stripContextHeader(item.content));
+      for (let i = 0; i < sentences.length; i += 1) {
+        const sentence = sentences[i] as string;
+        const score = scoreSentence(sentence, queryTerms, idf, intent, titleTerms(item)) * itemWeight;
+        if (score <= 0) continue;
+        // "Then it is decided." on its own tells the reader nothing, so a short
+        // cue sentence is quoted together with the sentence that follows it.
+        const next = sentences[i + 1];
+        const needsContinuation =
+          next !== undefined &&
+          sentence.trim().split(/\s+/).length < 10 &&
+          (DECISION_CUES.test(sentence) || ACTION_CUES.test(sentence));
+        scored.push({ sentence: needsContinuation ? `${sentence} ${next}` : sentence, score, item });
       }
     }
 
@@ -321,22 +342,15 @@ interface TimedSentence {
 
 type Intent = 'when' | 'who' | 'decision' | 'howmany' | 'general';
 
-const DECISION_CUES =
-  /\b(decided|decision|agreed|we(?:'ll| will) (?:use|go with|build|adopt)|settled on|concluded|approved|chose|choosing)\b/i;
-const ACTION_CUES =
-  /\b(action item|will (?:send|share|write|prepare|set up|create|follow up|draft|review|post|update)|needs? to|responsible for|assigned to|take(?:s)? ownership|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next week))\b/i;
-const DEADLINE_CUES = /\b(deadline|due|closes?|closing|cut[- ]?off|submit by|no later than|expires?)\b/i;
-const HEDGE_CUES =
-  /\b(at the earliest|nothing was finalised|nothing was finalized|not final|tentative|proposed|suggested|might|maybe|we could|to be confirmed|tbc|tbd|draft)\b/i;
-const URGENT_CUES =
-  /\b(deadline|due|urgent|tomorrow|today|closes?|final|required|must|immediately|reminder)\b/i;
+/** The "Author (2026-09-16):" stamp the message indexer prepends. */
+/** Header the indexer prepends to a chunk: `[Title · locator]` on its own line. */
+const CONTEXT_HEADER = /^\[[^\]\n]{1,200}\]\n/;
 
-/** Concrete calendar dates only — no weekday names or relative words. */
-const CALENDAR_DATE_PATTERN =
-  /\b(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/i;
+function stripContextHeader(content: string): string {
+  return content.replace(CONTEXT_HEADER, '');
+}
 
-const DATE_PATTERN =
-  /\b(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|next week)\b/i;
+const ATTRIBUTION_PREFIX = /^\s*\[?[^\]\n]{0,80}\]?\s*[A-Za-z][^:\n]{0,60}\(\d{4}-\d{2}-\d{2}\):\s*/;
 
 function classifyIntent(question: string): Intent {
   const q = question.toLowerCase();
@@ -378,11 +392,24 @@ function buildIdf(documents: string[]): Map<string, number> {
   return idf;
 }
 
+function titleTerms(item: GroundedContextItem): Set<string> {
+  return new Set(contentTokens(item.title));
+}
+
+/**
+ * Scores a sentence against the question.
+ *
+ * A query term found only in the *source's title* still counts, at half weight:
+ * "what did we decide about the AI architecture" should reach a decision
+ * recorded in the AI Architecture Meeting even though the sentence itself never
+ * repeats the meeting's name. Titles are real metadata, not invention.
+ */
 function scoreSentence(
   sentence: string,
   queryTerms: Set<string>,
   idf: Map<string, number>,
   intent: Intent,
+  sourceTitleTerms: Set<string> = new Set(),
 ): number {
   const tokens = new Set(contentTokens(sentence));
   if (tokens.size === 0) return 0;
@@ -393,8 +420,15 @@ function scoreSentence(
     if (tokens.has(term)) {
       score += idf.get(term) ?? 1;
       matched += 1;
+    } else if (sourceTitleTerms.has(term)) {
+      score += (idf.get(term) ?? 1) * 0.5;
+      matched += 0.5;
     }
   }
+  // At least one term must appear in the sentence itself; a title match alone
+  // would make every sentence of a well-named source look relevant.
+  const inSentence = [...queryTerms].some((term) => tokens.has(term));
+  if (!inSentence) return 0;
   if (matched === 0) return 0;
 
   // Reward coverage of the question, penalise very long sentences mildly.
@@ -410,6 +444,11 @@ function scoreSentence(
   // Tentative statements are still worth showing, but a confirmed statement
   // should outrank them when both mention the same thing.
   if (HEDGE_CUES.test(sentence)) score *= 0.8;
+
+  // Someone else asking the same question is not an answer to it. Community
+  // archives are full of these, and they match the query wording better than
+  // the reply does, so they need an explicit penalty.
+  if (sentence.trim().endsWith('?')) score *= 0.25;
 
   return score;
 }
@@ -483,12 +522,16 @@ function detectConflict(selected: ScoredSentence[], intent: Intent): Conflict | 
     // Prefer a concrete calendar date ("September 17") over a weekday name,
     // otherwise "Thursday" and "September 18" would look like a disagreement
     // when they may describe the same day.
+    // Message chunks are stored as "Author (2026-09-16): text". That leading
+    // stamp is provenance, not a date the source states, so comparing it
+    // against a real deadline would invent a disagreement.
+    const body = entry.sentence.replace(ATTRIBUTION_PREFIX, '');
     const match =
       intent === 'when'
-        ? (entry.sentence.match(CALENDAR_DATE_PATTERN) ?? entry.sentence.match(DATE_PATTERN))
-        : entry.sentence.match(/\b\d+(?:\.\d+)?\b/);
+        ? (body.match(CALENDAR_DATE_PATTERN) ?? body.match(DATE_PATTERN))
+        : body.match(/\b\d+(?:\.\d+)?\b/);
     if (!match) continue;
-    const key = match[0].toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ');
+    const key = intent === 'when' ? canonicalDateKey(match[0]) : normaliseValue(match[0]);
     if (!byValue.has(key)) byValue.set(key, entry);
   }
   if (byValue.size < 2) return null;
@@ -516,6 +559,51 @@ function detectConflict(selected: ScoredSentence[], intent: Intent): Conflict | 
   return {
     explanation: `The sources disagree: ${described}.${preference}`,
   };
+}
+
+const MONTHS: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+};
+
+function normaliseValue(value: string): string {
+  return value.toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Reduces a date to month-day.
+ *
+ * "September 17" and "September 17, 2026" are the same deadline stated with
+ * different precision, and reporting them as a disagreement would be worse than
+ * saying nothing. The year is deliberately dropped: within a community archive
+ * the ambiguous case is precision, not a different year.
+ */
+function canonicalDateKey(value: string): string {
+  const normalised = normaliseValue(value);
+
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalised);
+  if (iso) return `${iso[2]}-${iso[3]}`;
+
+  const monthFirst = /^([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+\d{4})?$/.exec(normalised);
+  if (monthFirst) {
+    const month = MONTHS[(monthFirst[1] as string).slice(0, 3)];
+    if (month) return `${month}-${(monthFirst[2] as string).padStart(2, '0')}`;
+  }
+
+  const dayFirst = /^(\d{1,2})\s+([a-z]{3,9})(?:\s+\d{4})?$/.exec(normalised);
+  if (dayFirst) {
+    const month = MONTHS[(dayFirst[2] as string).slice(0, 3)];
+    if (month) return `${month}-${(dayFirst[1] as string).padStart(2, '0')}`;
+  }
+
+  const slash = /^(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?$/.exec(normalised);
+  if (slash) {
+    return `${(slash[2] as string).padStart(2, '0')}-${(slash[1] as string).padStart(2, '0')}`;
+  }
+
+  // Weekday names and relative words ("tomorrow") cannot be resolved without a
+  // reference date, so they compare as themselves.
+  return normalised;
 }
 
 function centralityScore(sentence: string, idf: Map<string, number>): number {

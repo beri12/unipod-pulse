@@ -1,4 +1,5 @@
 import { chunkSegments, type ChunkSegment } from '@unipods/ai';
+import { withHeader } from './context-header';
 import { setDocumentChunkEmbeddings } from '@unipods/database';
 import { noopLogger, type IngestDeps, type PipelineResult } from './deps';
 import { DocumentExtractionError, resolveParser } from './parsers';
@@ -60,12 +61,24 @@ export async function processDocument(
       throw new DocumentExtractionError('This document produced no indexable content.');
     }
 
+    // Contextual header: a chunk taken out of the middle of a file loses every
+    // clue about what it belongs to, which both retrievers need. "Judging
+    // criteria" only matches a question about the hackathon if the chunk says
+    // which document it came from.
+    const withContext = chunks.map((chunk) => ({
+      ...chunk,
+      content: withHeader(
+        [document.title, typeof chunk.metadata.section === 'string' ? chunk.metadata.section : null],
+        chunk.content,
+      ),
+    }));
+
     // Re-processing replaces the previous index for this document atomically,
     // so a retry can never leave a mix of old and new chunks behind.
     await prisma.$transaction([
       prisma.documentChunk.deleteMany({ where: { documentId } }),
       prisma.documentChunk.createMany({
-        data: chunks.map((chunk) => ({
+        data: withContext.map((chunk) => ({
           documentId,
           content: chunk.content,
           chunkIndex: chunk.chunkIndex,

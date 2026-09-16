@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { LlmService } from '@unipods/ai';
+import { stripHeader } from '@unipods/ingest';
 import type {
   ChatMessageDto,
   ChatResponse,
@@ -18,6 +19,10 @@ import { toSourceRef } from '../sources/sources.service';
 
 /** How much of a chunk is kept as the verbatim excerpt on a citation card. */
 const QUOTE_MAX_CHARS = 280;
+/** Cards from one source, so a long document cannot crowd out other evidence. */
+const MAX_CITATIONS_PER_SOURCE = 2;
+/** Cards in total on one answer. */
+const MAX_CITATIONS = 6;
 
 @Injectable()
 export class ChatService {
@@ -108,8 +113,14 @@ export class ChatService {
   }
 
   /**
-   * Deduplicates by source: several chunks from one document produce one
-   * citation card, keeping the highest-scoring excerpt.
+   * Turns the cited chunks into citation cards.
+   *
+   * Deduplication is by *location*, not by source: two passages from different
+   * moments of the same meeting are two different things to check, and
+   * collapsing them would leave the card pointing at a timestamp the answer
+   * never used. A single source still contributes at most
+   * `MAX_CITATIONS_PER_SOURCE` cards so one long document cannot crowd out the
+   * rest.
    */
   private async persistCitations(
     chatMessageId: string,
@@ -117,14 +128,25 @@ export class ChatService {
   ): Promise<Citation[]> {
     if (cited.length === 0) return [];
 
-    const bySource = new Map<string, RankedChunk>();
+    // Order follows the answer, not the retrieval score: the cards a reader
+    // checks first should be the passages the answer leaned on first.
+    const seenLocations = new Set<string>();
+    const perSource = new Map<string, number>();
+    const selected: RankedChunk[] = [];
+
     for (const chunk of cited) {
-      const existing = bySource.get(chunk.sourceId);
-      if (!existing || chunk.score > existing.score) bySource.set(chunk.sourceId, chunk);
+      const key = `${chunk.sourceId}:${locationKey(chunk)}`;
+      if (seenLocations.has(key)) continue;
+      const used = perSource.get(chunk.sourceId) ?? 0;
+      if (used >= MAX_CITATIONS_PER_SOURCE) continue;
+      seenLocations.add(key);
+      perSource.set(chunk.sourceId, used + 1);
+      selected.push(chunk);
+      if (selected.length >= MAX_CITATIONS) break;
     }
 
     const rows = await this.prisma.$transaction(
-      [...bySource.values()].map((chunk) =>
+      selected.map((chunk) =>
         this.prisma.chatCitation.create({
           data: {
             chatMessageId,
@@ -246,9 +268,23 @@ export class ChatService {
   }
 }
 
-/** Trims a chunk to a readable excerpt on a sentence or word boundary. */
+/** Identifies where in a source a chunk sits, for citation deduplication. */
+function locationKey(chunk: RankedChunk): string {
+  const metadata = chunk.chunkMetadata as SourceLocator;
+  if (typeof metadata.startTime === 'number') return `t${Math.round(metadata.startTime)}`;
+  if (typeof metadata.page === 'number') return `p${metadata.page}`;
+  if (typeof metadata.section === 'string') return `s${metadata.section}`;
+  return `c${chunk.chunkIndex}`;
+}
+
+/**
+ * Trims a chunk to a readable excerpt on a sentence or word boundary.
+ *
+ * The contextual header the indexer prepends is removed first: it exists for
+ * retrieval, and quoting it back would misrepresent what the source says.
+ */
 export function excerpt(content: string, max = QUOTE_MAX_CHARS): string {
-  const text = content.trim().replace(/\s+/g, ' ');
+  const text = stripHeader(content).trim().replace(/\s+/g, ' ');
   if (text.length <= max) return text;
   const sliced = text.slice(0, max);
   const sentenceEnd = Math.max(

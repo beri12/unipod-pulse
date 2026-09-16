@@ -29,20 +29,24 @@
     "rag:eval": "tsx scripts/rag-eval.ts"
   },
   "devDependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.2",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
     "prettier": "^3.4.2",
     "prisma": "7.10.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "turbo": "^2.10.13",
-    "typescript": "5.9.3",
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
-    "dotenv": "^16.4.7"
+    "typescript": "5.9.3"
   },
   "dependencies": {
-    "@unipods/database": "workspace:*",
+    "@unipods/ai": "workspace:*",
     "@unipods/config": "workspace:*",
-    "@unipods/ai": "workspace:*"
+    "@unipods/database": "workspace:*",
+    "@unipods/ingest": "workspace:*",
+    "@unipods/types": "workspace:*"
   }
 }

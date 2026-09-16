@@ -47,7 +47,7 @@ export class SearchService {
       const position = describeLocator(chunk.sourceType as SourceKind, locator);
       return {
         id: chunk.chunkId,
-        title: position ? `${chunk.sourceTitle} · ${position}` : chunk.sourceTitle,
+        title: appendPosition(chunk.sourceTitle, position),
         snippet: highlight(excerpt(chunk.content, 260), trimmed),
         type: chunk.sourceType,
         score: Math.round(chunk.score * 1000) / 1000,
@@ -69,6 +69,21 @@ export class SearchService {
 
     return { query: trimmed, results, took: Date.now() - started };
   }
+}
+
+/**
+ * Appends the position to the title, skipping parts the title already states.
+ * A message source is titled "build-help · Kelechi Anyanwu", so repeating the
+ * channel would only make the result harder to scan.
+ */
+export function appendPosition(title: string, position: string): string {
+  if (!position) return title;
+  const lower = title.toLowerCase();
+  const parts = position
+    .split(' · ')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && !lower.includes(part.toLowerCase()));
+  return parts.length > 0 ? `${title} · ${parts.join(' · ')}` : title;
 }
 
 /**

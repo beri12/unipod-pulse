@@ -1,0 +1,54 @@
+WEBVTT
+
+NOTE Synthetic demo transcript created for the UniPods Pulse demo.
+
+00:00:06.000 --> 00:00:28.000
+Amara Obi: This is the AI architecture session. The goal today is to decide how the prototype answers questions, and to leave with owners for the pieces.
+
+00:00:28.500 --> 00:00:54.000
+Tunde Bello: The obvious option is to fine-tune a model on the community archive. It reads well in a demo but it is expensive and we cannot show where an answer came from.
+
+00:00:54.500 --> 00:01:22.000
+Chidi Nwosu: And every time someone posts a new announcement the model is stale again. We would be retraining weekly for a community that changes daily.
+
+00:12:10.000 --> 00:12:38.000
+Tunde Bello: The second option is plain keyword search over everything. It is honest about sources but it misses anything phrased differently, which is most questions people actually ask.
+
+00:12:38.500 --> 00:13:04.000
+Amara Obi: So keyword search alone is too brittle and fine-tuning alone cannot cite. Neither is acceptable on its own for the AI track.
+
+00:24:40.000 --> 00:25:12.000
+Chidi Nwosu: What if we combine them? Embed everything for meaning, keep full-text search for exact terms and names, and merge the two result sets before answering.
+
+00:25:12.500 --> 00:25:44.000
+Tunde Bello: That is retrieval-augmented generation with a hybrid retriever. The model only ever sees retrieved passages, so every sentence can point at a source.
+
+00:31:20.000 --> 00:31:50.000
+Amara Obi: Does everyone agree that is the direction? Any objections to hybrid retrieval over fine-tuning?
+
+00:31:50.500 --> 00:32:12.000
+Chidi Nwosu: No objection. It is also far cheaper to keep current, because new content is just new embeddings rather than a new training run.
+
+00:32:15.000 --> 00:32:52.000
+Amara Obi: Then it is decided. The prototype will use retrieval-augmented generation over searchable community sources, with hybrid semantic and keyword retrieval, and every answer must carry citations.
+
+00:32:52.500 --> 00:33:20.000
+Amara Obi: We also agreed that when retrieval finds nothing solid, the system says it could not find a confirmed answer instead of guessing.
+
+00:38:04.000 --> 00:38:36.000
+Tunde Bello: I will build the ingestion pipeline: document parsing, chunking and embedding, by Friday.
+
+00:38:36.500 --> 00:39:06.000
+Chidi Nwosu: I will take the retrieval and ranking layer, and I need the chunk schema from Tunde before I can finish it.
+
+00:39:06.500 --> 00:39:34.000
+Amara Obi: I will write the answer prompt and the citation rules, and I will prepare the demo script for demo day.
+
+00:44:12.000 --> 00:44:40.000
+Chidi Nwosu: One open question: do we index private pod channels, or only public ones? I do not think we should decide that without asking the pod leads.
+
+00:44:40.500 --> 00:45:08.000
+Amara Obi: Agreed, leave it open. I will raise it with the pod leads this week and we will come back to it.
+
+00:45:08.500 --> 00:45:30.000
+Amara Obi: Deadline reminder: team declarations are due on the seventeenth, and the build period starts on the eighteenth.

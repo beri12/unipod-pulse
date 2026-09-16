@@ -16,11 +16,18 @@ export interface Chunk<M extends Record<string, unknown> = Record<string, unknow
   metadata: M & Record<string, unknown>;
 }
 
-export interface ChunkOptions {
+export interface ChunkOptions<M extends Record<string, unknown> = Record<string, unknown>> {
   targetTokens?: number;
   overlapTokens?: number;
   /** Chunks below this size are merged into their neighbour instead of stored. */
   minTokens?: number;
+  /**
+   * Forces a chunk boundary between two segments even when the token budget is
+   * not spent. Meetings use this to keep a chunk inside one stretch of the
+   * recording, so its citation timestamp points at the right moment rather than
+   * at the start of the call.
+   */
+  breakBetween?: (chunkStart: M, next: M) => boolean;
 }
 
 interface TaggedSentence<M extends Record<string, unknown>> {
@@ -42,7 +49,7 @@ interface TaggedSentence<M extends Record<string, unknown>> {
  */
 export function chunkSegments<M extends Record<string, unknown>>(
   segments: Array<ChunkSegment<M>>,
-  options: ChunkOptions = {},
+  options: ChunkOptions<M> = {},
 ): Array<Chunk<M>> {
   const targetTokens = options.targetTokens ?? CHUNKING_DEFAULTS.targetTokens;
   const overlapTokens = Math.min(
@@ -82,9 +89,17 @@ export function chunkSegments<M extends Record<string, unknown>>(
   };
 
   for (const sentence of sentences) {
-    if (currentTokens > 0 && currentTokens + sentence.tokens > targetTokens) {
+    const chunkStart = current[0]?.metadata;
+    const forcedBreak =
+      current.length > 0 &&
+      chunkStart !== undefined &&
+      options.breakBetween?.(chunkStart, sentence.metadata) === true;
+
+    if (currentTokens > 0 && (forcedBreak || currentTokens + sentence.tokens > targetTokens)) {
       flush();
-      current = takeOverlap(current, overlapTokens);
+      // A forced break means the next chunk belongs to a different moment, so
+      // carrying sentences across it would misattribute them.
+      current = forcedBreak ? [] : takeOverlap(current, overlapTokens);
       currentTokens = current.reduce((sum, entry) => sum + entry.tokens, 0);
     }
     current.push(sentence);
@@ -99,7 +114,7 @@ export function chunkSegments<M extends Record<string, unknown>>(
 export function chunkText<M extends Record<string, unknown>>(
   text: string,
   metadata: M,
-  options: ChunkOptions = {},
+  options: ChunkOptions<M> = {},
 ): Array<Chunk<M>> {
   return chunkSegments<M>([{ text, metadata }], options);
 }

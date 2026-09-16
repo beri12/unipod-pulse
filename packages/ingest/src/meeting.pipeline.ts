@@ -1,7 +1,15 @@
-import { chunkSegments, formatTimestamp, type ChunkSegment, type TranscriptSegment } from '@unipods/ai';
+import {
+  chunkSegments,
+  extractKeyStatements,
+  formatTimestamp,
+  type ChunkSegment,
+  type KeyStatement,
+  type TranscriptSegment,
+} from '@unipods/ai';
 import { setMeetingChunkEmbeddings } from '@unipods/database';
 import type { PrismaClient } from '@unipods/database';
 import type { MeetingSummaryPayload } from '@unipods/types';
+import { withHeader } from './context-header';
 import { noopLogger, type IngestDeps, type PipelineResult } from './deps';
 
 interface MeetingChunkMetadata extends Record<string, unknown> {
@@ -10,6 +18,12 @@ interface MeetingChunkMetadata extends Record<string, unknown> {
   endTime: number;
   speaker?: string;
 }
+
+/** A transcript chunk covers at most this much of the recording. */
+const MAX_CHUNK_SPAN_SECONDS = 180;
+/** A pause longer than this ends a chunk: the conversation moved on. */
+const SILENCE_BREAK_SECONDS = 90;
+const MEETING_TARGET_TOKENS = 220;
 
 export class MeetingProcessingError extends Error {
   constructor(message: string) {
@@ -158,14 +172,43 @@ export async function processMeeting(deps: IngestDeps, meetingId: string): Promi
       },
     }));
 
-    const chunks = chunkSegments(segments, deps.chunking);
+    const chunks = chunkSegments(segments, {
+      // Transcripts are chunked tighter than prose: a citation that says 32:15
+      // has to land on the moment being cited, and a chunk spanning twenty
+      // minutes cannot do that.
+      targetTokens: Math.min(deps.chunking?.targetTokens ?? MEETING_TARGET_TOKENS, MEETING_TARGET_TOKENS),
+      overlapTokens: Math.min(deps.chunking?.overlapTokens ?? 40, 60),
+      minTokens: 30,
+      breakBetween: (chunkStart, next) =>
+        next.startTime - chunkStart.startTime > MAX_CHUNK_SPAN_SECONDS ||
+        next.startTime - Number(chunkStart.endTime ?? chunkStart.startTime) > SILENCE_BREAK_SECONDS,
+    });
+
+    // A meeting's decisions and commitments are what people search for, and
+    // they are scattered across the call. Collecting them into one chunk —
+    // verbatim, never paraphrased — makes "what did we decide about X"
+    // retrievable without relying on the exact wording used in the moment.
+    const keyStatements = extractKeyStatements(
+      transcript.map((segment) => ({
+        speaker: segment.speaker,
+        content: segment.content,
+        startTime: segment.startTime,
+        endTime: segment.endTime,
+      })),
+    );
+    const digest = buildDigestChunk(meeting.title, keyStatements);
 
     await prisma.$transaction([
       prisma.meetingChunk.deleteMany({ where: { meetingId } }),
       prisma.meetingChunk.createMany({
         data: chunks.map((chunk) => ({
           meetingId,
-          content: chunk.content,
+          // Contextual header, so a passage from the middle of a call still
+          // says which meeting and which moment it came from.
+          content: withHeader(
+            [meeting.title, formatTimestamp(Number(chunk.metadata.startTime ?? 0))],
+            chunk.content,
+          ),
           chunkIndex: chunk.chunkIndex,
           tokenCount: chunk.tokenCount,
           startTime: Number(chunk.metadata.startTime ?? 0),
@@ -178,6 +221,28 @@ export async function processMeeting(deps: IngestDeps, meetingId: string): Promi
         })),
       }),
     ]);
+
+    if (digest) {
+      await prisma.meetingChunk.create({
+        data: {
+          meetingId,
+          content: digest.content,
+          chunkIndex: chunks.length,
+          tokenCount: Math.ceil(digest.content.length / 4),
+          startTime: digest.startTime,
+          endTime: digest.endTime,
+          metadata: {
+            source: 'meeting',
+            kind: 'key-statements',
+            startTime: digest.startTime,
+            endTime: digest.endTime,
+            chunkIndex: chunks.length,
+            timestamp: formatTimestamp(digest.startTime),
+            statements: keyStatements.length,
+          },
+        },
+      });
+    }
 
     const stored = await prisma.meetingChunk.findMany({
       where: { meetingId },
@@ -213,8 +278,9 @@ export async function processMeeting(deps: IngestDeps, meetingId: string): Promi
       },
     });
 
-    logger.info('meeting processed', { meetingId, chunks: chunks.length, embedded });
-    return { ok: true, chunks: chunks.length, embedded };
+    const totalChunks = chunks.length + (digest ? 1 : 0);
+    logger.info('meeting processed', { meetingId, chunks: totalChunks, embedded });
+    return { ok: true, chunks: totalChunks, embedded };
   } catch (error) {
     const message = (error as Error).message;
     logger.error('meeting processing failed', { meetingId, reason: message });
@@ -224,4 +290,44 @@ export async function processMeeting(deps: IngestDeps, meetingId: string): Promi
     });
     return { ok: false, chunks: 0, embedded: 0, message };
   }
+}
+
+
+/**
+ * Builds the verbatim decisions-and-actions chunk for a meeting.
+ *
+ * Every line is a sentence copied out of the transcript, grouped under plain
+ * headings. Nothing here is generated, so citing it cites the transcript.
+ */
+function buildDigestChunk(
+  title: string,
+  statements: KeyStatement[],
+): { content: string; startTime: number; endTime: number } | null {
+  if (statements.length === 0) return null;
+
+  const groups: Array<[KeyStatement['kind'], string]> = [
+    ['decision', 'Decisions'],
+    ['action', 'Action items'],
+    ['deadline', 'Deadlines'],
+    ['question', 'Open questions'],
+  ];
+
+  const lines: string[] = [];
+  for (const [kind, heading] of groups) {
+    const matching = statements.filter((statement) => statement.kind === kind);
+    if (matching.length === 0) continue;
+    lines.push(`${heading}:`);
+    for (const statement of matching.slice(0, 12)) {
+      const who = statement.speaker ? `${statement.speaker}: ` : '';
+      lines.push(`- [${formatTimestamp(statement.startTime)}] ${who}${statement.text}`);
+    }
+  }
+  if (lines.length === 0) return null;
+
+  const times = statements.map((statement) => statement.startTime);
+  return {
+    content: withHeader([title, 'decisions and action items'], lines.join('\n')),
+    startTime: Math.min(...times),
+    endTime: Math.max(...times),
+  };
 }

@@ -110,6 +110,8 @@ export class RagService {
     const result = await this.llm.generateAnswer({ question, context, history });
     const generationMs = Date.now() - generationStarted;
 
+    // In the order the answer cited them, so downstream citation cards follow
+    // the reading order of the answer rather than the retrieval score.
     const cited = result.citedIndexes
       .map((index) => retrieval.chunks[index - 1])
       .filter((chunk): chunk is RankedChunk => Boolean(chunk));

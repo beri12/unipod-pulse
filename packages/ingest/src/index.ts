@@ -1,3 +1,4 @@
+export * from './context-header';
 export * from './deps';
 export * from './document.pipeline';
 export * from './importers';

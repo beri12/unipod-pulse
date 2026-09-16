@@ -37,30 +37,46 @@ export function tokenise(text: string): string[] {
 /**
  * Very small suffix stripper.
  *
- * Retrieval only needs "declarations" and "declaration" to collide; a full
- * Porter stemmer is more machinery (and more wrong-stem surprises) than that
- * warrants. Rules are applied longest-suffix-first and never shorten a token
- * below four characters.
+ * Retrieval only needs "declarations" and "declaration" — and "decide" and
+ * "decided" — to collide. A full Porter stemmer is more machinery (and more
+ * wrong-stem surprises) than that warrants, so this applies two conservative
+ * passes and never shortens a token below four characters.
  */
 export function stem(token: string): string {
   if (token.length <= 4) return token;
-  const rules: Array<[RegExp, string]> = [
-    [/ies$/, 'y'],
-    [/([^aeiou])ied$/, '$1y'],
-    [/(ss|sh|ch|x|z)es$/, '$1'],
-    [/([^s])s$/, '$1'],
-    [/ements?$/, 'ement'],
-    [/ings$/, 'ing'],
-    [/(\w{3,})ing$/, '$1'],
-    [/(\w{3,})ed$/, '$1'],
-  ];
-  for (const [pattern, replacement] of rules) {
-    if (pattern.test(token)) {
-      const stemmed = token.replace(pattern, replacement);
-      if (stemmed.length >= 4) return stemmed;
-    }
-  }
-  return token;
+  let out = token;
+
+  // Pass 1: plurals.
+  out = applyRule(out, /ies$/, 'y');
+  out = applyRule(out, /(ss|sh|ch|x|z)es$/, '$1');
+  out = applyRule(out, /([^s])s$/, '$1');
+
+  // Pass 2: verb endings, applied after the plural so "meetings" and "meeting"
+  // both reach "meet".
+  const beforeVerbRules = out;
+  out = applyRule(out, /(\w{3,})ing$/, '$1');
+  out = applyRule(out, /(\w{3,})ed$/, '$1');
+  // "submitted" -> "submitt" -> "submit"; only after a suffix was actually
+  // removed, so "business" and "small" are left alone.
+  if (out !== beforeVerbRules) out = applyRule(out, /([^aeioulsz])\1$/, '$1');
+
+  return dropSilentE(out);
+}
+
+function applyRule(token: string, pattern: RegExp, replacement: string): string {
+  if (!pattern.test(token)) return token;
+  const stemmed = token.replace(pattern, replacement);
+  // A rule that would leave a stub ("string" -> "str") is not worth applying.
+  return stemmed.length >= 4 ? stemmed : token;
+}
+
+/**
+ * Drops a trailing "e" so the -ed rule and the bare form agree: without this,
+ * "decided" stems to "decid" while "decide" stays "decide", and a question
+ * about what the community *decided* fails to match the sentence that says so.
+ */
+function dropSilentE(token: string): string {
+  return token.length > 4 && token.endsWith('e') ? token.slice(0, -1) : token;
 }
 
 /** Meaning-bearing tokens: stopwords removed and light stemming applied. */
