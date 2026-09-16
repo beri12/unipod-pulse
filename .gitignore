@@ -30,6 +30,9 @@ coverage/
 test-results/
 playwright-report/
 
+# redis dump written into the working directory by a local redis-server
+dump.rdb
+
 # storage (local dev uploads)
 storage/
 uploads/

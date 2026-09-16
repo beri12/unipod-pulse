@@ -39,7 +39,7 @@ export function detectTranscriptFormat(fileName: string, content: string): Trans
   if (/^\d+\s*\r?\n\d{1,2}:\d{2}:\d{2},\d{3}\s*-->/m.test(content)) return 'srt';
   // Only treat it as JSON when the opening bracket is followed by something
   // JSON-shaped, rather than by a timestamp.
-  if (/^\[\s*[{\["]/.test(head) || /^\{\s*"/.test(head)) return 'json';
+  if (/^\[\s*[{["]/.test(head) || /^\{\s*"/.test(head)) return 'json';
   return 'txt';
 }
 
@@ -73,7 +73,7 @@ const CUE_TIME =
 
 function parseCueFile(content: string, format: 'vtt' | 'srt'): TranscriptSegment[] {
   const blocks = content
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .replace(/\r\n?/g, '\n')
     .replace(/^WEBVTT[^\n]*\n/, '')
     .split(/\n{2,}/);

@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+packages/database/generated
+.git
+.github
+storage
+*.log
+dump.rdb
+.env
+.env.*
+!.env.example

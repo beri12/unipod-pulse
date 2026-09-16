@@ -104,7 +104,7 @@ export function splitSentences(text: string): string[] {
     .replace(/(\d)\.(\d)/g, '$1<DOT>$2');
 
   return protectedText
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9"'(\[])|\n{2,}/)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9"'([])|\n{2,}/)
     .map((sentence) => sentence.replace(/<DOT>/g, '.').trim())
     .filter((sentence) => sentence.length > 0);
 }
@@ -113,17 +113,17 @@ export function splitSentences(text: string): string[] {
  * Control characters that must never survive into the database or a prompt.
  * Built from a string so the source file itself stays plain ASCII.
  */
-const CONTROL_CHARS = new RegExp(
-  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]',
-  'g',
-);
+/* eslint-disable-next-line no-control-regex --
+   Stripping control characters is the whole point of this constant: they must
+   never reach the database, a prompt or the UI. */
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 /** Collapses whitespace and strips control characters from extracted text. */
 export function cleanExtractedText(text: string): string {
   return text
     .replace(/\r\n?/g, '\n')
     .replace(CONTROL_CHARS, '')
-    .replace(/ /g, ' ')
+    .replace(/\u00a0/g, ' ')
     .replace(/[ \t]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')

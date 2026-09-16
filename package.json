@@ -2,7 +2,7 @@
   "name": "unipods-pulse",
   "version": "0.1.0",
   "private": true,
-  "description": "UniPods Pulse — your community. One intelligent memory.",
+  "description": "UniPods Pulse \u2014 your community. One intelligent memory.",
   "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint",
+    "lint": "eslint .",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "pnpm --filter @unipods/api test:e2e",
@@ -26,22 +26,28 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema prisma/schema.prisma",
     "db:reset": "prisma migrate reset --schema prisma/schema.prisma",
-    "rag:eval": "tsx scripts/rag-eval.ts"
+    "rag:eval": "tsx scripts/rag-eval.ts",
+    "lint:fix": "eslint . --fix"
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.2",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
     "playwright": "^1.63.0",
     "prettier": "^3.4.2",
     "prisma": "7.10.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "turbo": "^2.10.13",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.70.0"
   },
   "dependencies": {
     "@unipods/ai": "workspace:*",

@@ -10,7 +10,6 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
-    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rimraf dist"
   },

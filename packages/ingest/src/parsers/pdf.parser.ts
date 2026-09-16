@@ -44,7 +44,6 @@ export class PdfParser implements DocumentParser {
 
     // Required lazily and by its library path: the package's index file runs a
     // self-test when it thinks it is the entry module.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pdfParse = require('pdf-parse/lib/pdf-parse.js') as PdfParseFn;
 
     try {

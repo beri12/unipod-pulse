@@ -29,7 +29,6 @@ export class DocxParser implements DocumentParser {
   }
 
   async extract(buffer: Buffer): Promise<ExtractionResult> {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mammoth = require('mammoth') as {
       convertToHtml(input: { buffer: Buffer }): Promise<{ value: string; messages: unknown[] }>;
     };

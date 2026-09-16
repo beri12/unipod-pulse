@@ -26,7 +26,6 @@ export function createPrismaClient(connectionString?: string): PrismaClient {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __unipodsPrisma: PrismaClient | undefined;
 }
 
