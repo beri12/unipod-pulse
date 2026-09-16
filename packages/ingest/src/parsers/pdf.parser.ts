@@ -13,56 +13,69 @@ interface PdfTextItem {
   hasEOL?: boolean;
 }
 
-interface PdfPageData {
-  pageNumber?: number;
-  getTextContent(options?: Record<string, unknown>): Promise<{ items: PdfTextItem[] }>;
+interface PdfPage {
+  getTextContent(options?: Record<string, unknown>): Promise<{ items: unknown[] }>;
+  cleanup(): void;
 }
 
-type PdfParseFn = (
-  buffer: Buffer,
-  options?: { pagerender?: (page: PdfPageData) => Promise<string>; max?: number },
-) => Promise<{ text: string; numpages: number; info?: Record<string, unknown> }>;
+interface PdfDocument {
+  numPages: number;
+  getPage(pageNumber: number): Promise<PdfPage>;
+  getMetadata(): Promise<{ info?: Record<string, unknown> }>;
+  destroy(): Promise<void>;
+}
+
+type GetDocument = (options: Record<string, unknown>) => { promise: Promise<PdfDocument> };
 
 /**
  * PDF text extraction with page numbers preserved.
  *
- * Page provenance matters: a citation that says "Hackathon Guidelines, page 4"
- * is checkable, one that says "Hackathon Guidelines" is not. `pdf-parse` only
- * returns a flat string, so we supply our own page renderer that captures each
- * page separately and rebuilds line breaks from the text items' y positions.
+ * Page provenance matters: a citation reading "Hackathon Guidelines, page 4" is
+ * checkable, one reading "Hackathon Guidelines" is not. pdf.js is driven
+ * directly rather than through a wrapper so each page can be read separately,
+ * and so line breaks can be rebuilt from the text items' positions — pdf.js
+ * returns positioned glyph runs, not lines.
+ *
+ * The library is loaded lazily and by its ESM legacy build, which is the one
+ * built for Node.
  */
 export class PdfParser implements DocumentParser {
   readonly name = 'pdf';
+  private getDocument: GetDocument | null = null;
 
   supports(mimeType: string, fileName: string): boolean {
     return mimeType === 'application/pdf' || hasExtension(fileName, '.pdf');
   }
 
-  async extract(buffer: Buffer): Promise<ExtractionResult> {
-    const pages: ExtractedPage[] = [];
-    let pageCursor = 0;
+  private async loadPdfjs(): Promise<GetDocument> {
+    if (this.getDocument) return this.getDocument;
+    const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
+      getDocument: GetDocument;
+    };
+    this.getDocument = pdfjs.getDocument;
+    return this.getDocument;
+  }
 
-    // Required lazily and by its library path: the package's index file runs a
-    // self-test when it thinks it is the entry module.
-    const pdfParse = require('pdf-parse/lib/pdf-parse.js') as PdfParseFn;
+  async extract(buffer: Buffer): Promise<ExtractionResult> {
+    const getDocument = await this.loadPdfjs();
+    let document: PdfDocument | null = null;
 
     try {
-      const result = await pdfParse(buffer, {
-        pagerender: async (pageData: PdfPageData) => {
-          pageCursor += 1;
-          const pageNumber = pageData.pageNumber ?? pageCursor;
-          const content = await pageData.getTextContent({
-            includeMarkedContent: false,
-            disableCombineTextItems: false,
-          });
-          const text = itemsToText(content.items);
-          pages.push({ page: pageNumber, text });
-          return text;
-        },
-      });
+      document = await getDocument({
+        // A copy, because pdf.js takes ownership of the buffer it is given.
+        data: new Uint8Array(buffer),
+        useSystemFonts: true,
+        // No script execution for untrusted uploads.
+        isEvalSupported: false,
+        disableFontFace: true,
+      }).promise;
 
-      if (pages.length === 0 && result.text.trim().length > 0) {
-        pages.push({ page: 1, text: result.text });
+      const pages: ExtractedPage[] = [];
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        pages.push({ page: pageNumber, text: itemsToText(content.items as PdfTextItem[]) });
+        page.cleanup();
       }
 
       if (pages.every((page) => page.text.trim().length === 0)) {
@@ -71,25 +84,29 @@ export class PdfParser implements DocumentParser {
         );
       }
 
-      pages.sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+      const metadata = await document.getMetadata().catch(() => ({ info: undefined }));
       return finalise(pages, {
-        pageCount: result.numpages ?? pages.length,
-        title: typeof result.info?.Title === 'string' ? result.info.Title : undefined,
-        author: typeof result.info?.Author === 'string' ? result.info.Author : undefined,
+        pageCount: document.numPages,
+        title: asString(metadata.info?.Title),
+        author: asString(metadata.info?.Author),
       });
     } catch (error) {
       if (error instanceof DocumentExtractionError) throw error;
-      throw new DocumentExtractionError(
-        `This PDF could not be read: ${(error as Error).message}`,
-      );
+      throw new DocumentExtractionError(`This PDF could not be read: ${(error as Error).message}`);
+    } finally {
+      await document?.destroy().catch(() => undefined);
     }
   }
 }
 
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 /**
  * Rebuilds readable lines from positioned glyph runs. A new line starts when
- * the item's baseline moves vertically; otherwise runs are joined with a space
- * unless they already touch.
+ * the baseline moves vertically; otherwise runs are joined with a space unless
+ * they already touch.
  */
 function itemsToText(items: PdfTextItem[]): string {
   let text = '';
@@ -97,7 +114,10 @@ function itemsToText(items: PdfTextItem[]): string {
 
   for (const item of items) {
     const value = item.str ?? '';
-    if (value === '') continue;
+    if (value === '') {
+      if (item.hasEOL) text += '\n';
+      continue;
+    }
     const y = item.transform?.[5];
 
     if (lastY !== null && typeof y === 'number' && Math.abs(y - lastY) > 1) {

@@ -6,7 +6,7 @@ node_modules/
 dist/
 build/
 .next/
-out/
+/out/
 *.tsbuildinfo
 
 # turbo
@@ -22,7 +22,7 @@ out/
 *.log
 npm-debug.log*
 pnpm-debug.log*
-logs/
+/logs/
 
 # test
 coverage/
@@ -33,10 +33,14 @@ playwright-report/
 # redis dump written into the working directory by a local redis-server
 dump.rdb
 
-# storage (local dev uploads)
-storage/
-uploads/
-tmp/
+# local dev uploads and scratch, anchored to the repository root so that a
+# source directory named `storage` is not silently excluded
+/storage/
+/uploads/
+/tmp/
+# runtime uploads written next to an app when LOCAL_STORAGE_DIR is relative
+apps/*/storage/
+apps/*/uploads/
 
 # prisma generated client
 packages/database/generated/

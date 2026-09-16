@@ -1,5 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DocumentExtractionError, MarkdownParser, resolveParser, TxtParser } from '../parsers';
+import {
+  DocumentExtractionError,
+  DocxParser,
+  MarkdownParser,
+  PdfParser,
+  resolveParser,
+  TxtParser,
+} from '../parsers';
 import { stripHeader, withHeader } from '../context-header';
 
 describe('resolveParser', () => {
@@ -87,5 +96,52 @@ describe('context headers', () => {
 
   it('leaves text that merely starts with a bracket alone', () => {
     expect(stripHeader('[not a header] still body')).toBe('[not a header] still body');
+  });
+});
+
+describe('PdfParser (real PDF)', () => {
+  const buffer = readFileSync(join(__dirname, 'fixtures/sample.pdf'));
+
+  it('extracts each page separately, numbered from one', async () => {
+    const result = await new PdfParser().extract(buffer, 'sample.pdf');
+    expect(result.pages.map((page) => page.page)).toEqual([1, 2]);
+    expect(result.metadata.pageCount).toBe(2);
+  });
+
+  it('keeps page-two content on page two, which is what a citation depends on', async () => {
+    const result = await new PdfParser().extract(buffer, 'sample.pdf');
+    const second = result.pages.find((page) => page.page === 2);
+    expect(second?.text).toContain('marmalade-protocol');
+    expect(result.pages.find((page) => page.page === 1)?.text).not.toContain('marmalade-protocol');
+  });
+
+  it('rebuilds line breaks rather than running the text together', async () => {
+    const result = await new PdfParser().extract(buffer, 'sample.pdf');
+    expect(result.pages[0]?.text).toMatch(/UniPods Parser Fixture\s*\n/);
+    expect(result.pages[0]?.text).toContain('October 5, 2026');
+  });
+
+  it('reports a file that is not a PDF instead of returning empty text', async () => {
+    await expect(new PdfParser().extract(Buffer.from('not a pdf'), 'x.pdf')).rejects.toThrow(
+      DocumentExtractionError,
+    );
+  });
+});
+
+describe('DocxParser (real DOCX)', () => {
+  const buffer = readFileSync(join(__dirname, 'fixtures/sample.docx'));
+
+  it('extracts the text and attributes it to its heading', async () => {
+    const result = await new DocxParser().extract(buffer, 'sample.docx');
+    const sections = result.pages.map((page) => page.section);
+    expect(sections).toContain('Key dates');
+    expect(sections).toContain('Requirements');
+    expect(result.text).toContain('quorated attendance sheet');
+  });
+
+  it('reports a file that is not a DOCX', async () => {
+    await expect(new DocxParser().extract(Buffer.from('PK not really'), 'x.docx')).rejects.toThrow(
+      DocumentExtractionError,
+    );
   });
 });

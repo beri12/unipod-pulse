@@ -5,8 +5,15 @@
   "description": "Framework-free ingestion pipelines shared by the API, the worker and the evaluation scripts",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
@@ -21,11 +28,10 @@
     "@unipods/types": "workspace:*",
     "csv-parse": "^5.6.0",
     "mammoth": "^1.9.0",
-    "pdf-parse": "^1.1.1"
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/pdf-parse": "^1.1.4",
     "rimraf": "^6.0.1",
     "typescript": "5.9.3",
     "vitest": "^2.1.8"
