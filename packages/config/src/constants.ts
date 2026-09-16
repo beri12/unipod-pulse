@@ -89,7 +89,7 @@ export const CHUNKING_DEFAULTS = {
 
 export const RAG_DEFAULTS = {
   topK: 8,
-  minScore: 0.18,
+  minScore: 0.12,
   /** Candidates pulled from each retriever before hybrid re-ranking. */
   candidateMultiplier: 4,
   maxContextTokens: 6_000,

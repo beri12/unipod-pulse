@@ -1,7 +1,31 @@
 import { config as loadDotenv } from 'dotenv';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
+
+/**
+ * Finds the monorepo root by walking up for `pnpm-workspace.yaml`.
+ *
+ * Relative paths in configuration must mean the same directory whichever app
+ * reads them: the API runs from `apps/api` and the worker from the repo root,
+ * so resolving `./storage` against `process.cwd()` would give them two
+ * different storage directories.
+ */
+export function findRepoRoot(startDir: string = process.cwd()): string {
+  let dir = resolve(startDir);
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir;
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return resolve(startDir);
+}
+
+/** Resolves a configured path: absolute paths are used as-is. */
+export function resolveFromRoot(path: string): string {
+  return isAbsolute(path) ? path : resolve(findRepoRoot(), path);
+}
 
 /**
  * Loads `.env` from the monorepo root (and an app-local `.env` if present)
@@ -90,7 +114,11 @@ export const envSchema = z
     TRANSCRIPTION_MODEL: z.string().default('whisper-1'),
 
     STORAGE_DRIVER: z.enum(['s3', 'local']).default('local'),
-    LOCAL_STORAGE_DIR: z.string().default('./storage'),
+    // Relative values are anchored to the monorepo root, not the process cwd.
+    LOCAL_STORAGE_DIR: z
+      .string()
+      .default('./storage')
+      .transform((value) => resolveFromRoot(value)),
     S3_ENDPOINT: z.string().optional(),
     S3_REGION: z.string().default('us-east-1'),
     S3_BUCKET: z.string().optional(),
@@ -112,7 +140,7 @@ export const envSchema = z
     RATE_LIMIT_LIMIT: intFromString(100, 1),
 
     RAG_TOP_K: intFromString(8, 1, 50),
-    RAG_MIN_SCORE: floatFromString(0.18, 0, 1),
+    RAG_MIN_SCORE: floatFromString(0.12, 0, 1),
     RAG_WEIGHT_SEMANTIC: floatFromString(0.6),
     RAG_WEIGHT_KEYWORD: floatFromString(0.25),
     RAG_WEIGHT_RECENCY: floatFromString(0.1),

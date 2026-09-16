@@ -4,8 +4,16 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist", "generated"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "generated"
+  ],
   "scripts": {
     "prebuild": "pnpm generate",
     "build": "tsc -p tsconfig.json",
@@ -15,7 +23,9 @@
     "clean": "rimraf dist generated *.tsbuildinfo"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@prisma/client-runtime-utils": "7.10.0",
     "@unipods/config": "workspace:*"
   },
   "devDependencies": {

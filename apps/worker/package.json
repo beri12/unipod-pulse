@@ -1,0 +1,33 @@
+{
+  "name": "@unipods/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UniPods Pulse background worker",
+  "license": "MIT",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@unipods/ai": "workspace:*",
+    "@unipods/config": "workspace:*",
+    "@unipods/database": "workspace:*",
+    "@unipods/ingest": "workspace:*",
+    "@unipods/types": "workspace:*",
+    "@aws-sdk/client-s3": "^3.716.0",
+    "bullmq": "^5.34.0",
+    "ioredis": "^5.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "typescript": "5.9.3"
+  }
+}

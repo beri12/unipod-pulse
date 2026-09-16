@@ -33,7 +33,9 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
 
-    "incremental": true
+    // Deliberately not incremental: `nest build` wipes outDir first, and a
+    // stale .tsbuildinfo then convinces tsc there is nothing to emit.
+    "incremental": false
   },
   "exclude": ["node_modules", "dist", ".next", ".turbo"]
 }

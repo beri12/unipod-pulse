@@ -8,19 +8,21 @@ export { PrismaClient };
 export type DatabaseClient = PrismaClient;
 
 /**
- * Prisma 7 requires an explicit driver adapter. One pool per process is reused
- * across hot reloads in development so we do not exhaust Postgres connections.
+ * Prisma 7 requires an explicit driver adapter, so the connection options live
+ * here and are shared by every entry point (API, worker, seed, scripts).
  */
-export function createPrismaClient(connectionString?: string): PrismaClient {
+export function prismaClientOptions(connectionString?: string): ConstructorParameters<
+  typeof PrismaClient
+>[0] {
   const env = loadEnv();
-  const adapter = new PrismaPg({ connectionString: connectionString ?? env.DATABASE_URL });
-  return new PrismaClient({
-    adapter,
-    log:
-      env.NODE_ENV === 'development'
-        ? [{ emit: 'event', level: 'warn' }, { emit: 'event', level: 'error' }]
-        : [{ emit: 'event', level: 'error' }],
-  });
+  return {
+    adapter: new PrismaPg({ connectionString: connectionString ?? env.DATABASE_URL }),
+    log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+  };
+}
+
+export function createPrismaClient(connectionString?: string): PrismaClient {
+  return new PrismaClient(prismaClientOptions(connectionString));
 }
 
 declare global {
