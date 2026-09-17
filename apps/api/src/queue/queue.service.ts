@@ -62,7 +62,24 @@ export class QueueService implements OnModuleDestroy {
     options: { jobId?: string; delayMs?: number } = {},
   ): Promise<string> {
     try {
-      const job = await this.queue(queueName).add(jobName, payload, {
+      const queue = this.queue(queueName);
+
+      // A custom job id is how re-queuing the same item stays idempotent while
+      // an attempt is still pending. But BullMQ also refuses an id that is
+      // merely *finished*, and finished jobs are kept for a day — so without
+      // this, asking to reprocess a document handled in the last 24 hours is
+      // silently dropped, leaving the row at PENDING with nothing to run it.
+      // A finished job is history, not work in progress, so it is cleared out
+      // of the way; one that is still waiting or running is left alone,
+      // because that is the de-duplication the id exists for.
+      if (options.jobId) {
+        const existing = await queue.getJob(options.jobId);
+        if (existing && ((await existing.isCompleted()) || (await existing.isFailed()))) {
+          await existing.remove();
+        }
+      }
+
+      const job = await queue.add(jobName, payload, {
         ...(options.jobId ? { jobId: options.jobId } : {}),
         ...(options.delayMs ? { delay: options.delayMs } : {}),
       });

@@ -10,6 +10,7 @@ import { setMeetingChunkEmbeddings } from '@unipods/database';
 import type { PrismaClient } from '@unipods/database';
 import type { MeetingSummaryPayload } from '@unipods/types';
 import { withHeader } from './context-header';
+import { describeFailure } from './failure';
 import { noopLogger, type IngestDeps, type PipelineResult } from './deps';
 
 interface MeetingChunkMetadata extends Record<string, unknown> {
@@ -302,13 +303,13 @@ export async function processMeeting(deps: IngestDeps, meetingId: string): Promi
     logger.info('meeting processed', { meetingId, chunks: totalChunks, embedded });
     return { ok: true, chunks: totalChunks, embedded };
   } catch (error) {
-    const message = (error as Error).message;
-    logger.error('meeting processing failed', { meetingId, reason: message });
+    const { userMessage, logDetail } = describeFailure(error);
+    logger.error('meeting processing failed', { meetingId, reason: logDetail });
     await prisma.meeting.update({
       where: { id: meetingId },
-      data: { status: 'FAILED', statusMessage: message.slice(0, 500) },
+      data: { status: 'FAILED', statusMessage: userMessage.slice(0, 500) },
     });
-    return { ok: false, chunks: 0, embedded: 0, message };
+    return { ok: false, chunks: 0, embedded: 0, message: userMessage };
   }
 }
 

@@ -1,6 +1,7 @@
 import { chunkSegments, type ChunkSegment } from '@unipods/ai';
 import { withHeader } from './context-header';
 import { setDocumentChunkEmbeddings } from '@unipods/database';
+import { describeFailure } from './failure';
 import { noopLogger, type IngestDeps, type PipelineResult } from './deps';
 import { DocumentExtractionError, resolveParser } from './parsers';
 
@@ -157,13 +158,13 @@ export async function processDocument(
     logger.info('document processed', { documentId, chunks: chunks.length, embedded });
     return { ok: true, chunks: chunks.length, embedded };
   } catch (error) {
-    const message =
-      error instanceof DocumentExtractionError
-        ? error.message
-        : `Processing failed: ${(error as Error).message}`;
-    logger.error('document processing failed', { documentId, reason: message });
-    await fail(deps, documentId, message);
-    return { ok: false, chunks: 0, embedded: 0, message };
+    // What the uploader is told and what is logged are not the same thing: a
+    // raw error carries server paths and SQL fragments that help nobody
+    // outside the system.
+    const { userMessage, logDetail } = describeFailure(error);
+    logger.error('document processing failed', { documentId, reason: logDetail });
+    await fail(deps, documentId, userMessage);
+    return { ok: false, chunks: 0, embedded: 0, message: userMessage };
   }
 }
 

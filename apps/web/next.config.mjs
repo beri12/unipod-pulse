@@ -10,6 +10,11 @@ loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../.env'), 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Next 16 writes AGENTS.md and CLAUDE.md into the app directory on every dev
+  // start. This repository documents itself in README.md and docs/, so the
+  // generated pair is untracked noise that shows up in `git status` after
+  // simply running the app.
+  agentRules: false,
   // The design-system package ships TypeScript source so it can share the app's
   // build settings and Tailwind scanning.
   transpilePackages: ['@unipods/ui'],

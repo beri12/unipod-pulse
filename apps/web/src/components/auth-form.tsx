@@ -73,7 +73,19 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
+        {/*
+          `method="post"` is belt and braces. The handler calls preventDefault,
+          and today this form is client-rendered only — `useSearchParams` inside
+          a `Suspense fallback={null}` keeps it out of the server HTML — so the
+          form and its handler appear together and a native submit is not
+          reachable. But a form that defaults to GET puts the password in the
+          address bar, in history and in access logs, and nothing about that
+          default is visible at the call site. If the Suspense boundary or the
+          `useSearchParams` call ever goes away, this form starts being server
+          -rendered and the window opens silently. POST costs nothing and closes
+          it in advance.
+        */}
+        <form onSubmit={onSubmit} method="post" className="mt-8 space-y-4" noValidate>
           {isRegister ? (
             <Field
               id="name"
