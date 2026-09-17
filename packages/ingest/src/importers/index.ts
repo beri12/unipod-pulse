@@ -308,6 +308,17 @@ function optionalString(value: unknown): string | null {
 }
 
 /**
+ * Lines a chat app writes about itself rather than something a member said.
+ *
+ * These carry no community knowledge, and indexing them actively hurts: a
+ * retrieval for "who joined" would surface the app's own join notices ahead of
+ * the conversation about it, and "<Media omitted>" placeholders match nothing
+ * useful while still consuming a chunk.
+ */
+const SYSTEM_LINE =
+  /^(?:\u200e)?(?:messages and calls are end-to-end encrypted|<media omitted>|this message was deleted|you deleted this message|missed (?:voice|video) call|(?:.{1,60} )?(?:created (?:this )?group|added you|joined using this group's invite link|left|removed .{1,60}|changed (?:the )?(?:subject|group description|this group's icon|their phone number)))/i;
+
+/**
  * Plain-text chat logs in the widely used
  * `[DD/MM/YYYY, HH:MM] Author: message` shape (WhatsApp and similar exports).
  * Continuation lines are appended to the previous message.
@@ -341,12 +352,16 @@ export class TxtImporter implements MessageImporter {
           if (warnings.length < MAX_WARNINGS) warnings.push(`Unreadable timestamp: ${match[1]}`);
           continue;
         }
+        const content = (match[3] ?? '').trim();
+        // Skipped rather than imported-then-filtered, so the reported import
+        // count matches what actually became searchable.
+        if (!content || SYSTEM_LINE.test(content)) continue;
         messages.push(
           normalise(
             {
               channel,
               authorName: (match[2] ?? 'Unknown').trim(),
-              content: match[3] ?? '',
+              content,
               messageDate: date,
               metadata: { platform: 'txt' },
             },

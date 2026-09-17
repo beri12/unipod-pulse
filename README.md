@@ -54,6 +54,8 @@ their community has never written down.
 | **Messages** | Import Telegram exports, JSON, CSV or plain-text chat logs; consecutive messages are windowed so short lines stay retrievable |
 | **What did I miss?** | A briefing for a day or a range, ranked by importance, every item linked to its source |
 | **Global search** | The same hybrid retrieval the assistant uses, without the answering step |
+| **Telegram bot** | Add it to the group: it reads along, and answers when asked, with the same citations and the same refusals as the web app |
+| **Automation** | `POST /api/ingest/*` lets n8n (or anything else) feed messages in and ask questions, so the bot logic can live in a workflow instead of in code |
 | **Admin** | Knowledge browser, processing status, queue depths, dependency health, and the ranked list of unanswered questions |
 
 ---
@@ -186,11 +188,20 @@ pnpm install
 
 cp .env.example .env         # then edit it — see below
 pnpm db:up                   # PostgreSQL (with pgvector) and Redis
-pnpm db:migrate              # create the schema
+pnpm db:generate             # generate the Prisma client
+pnpm db:deploy               # create the schema
 pnpm db:seed                 # optional: synthetic demo community
 
 pnpm dev                     # web :3000, API :3001, worker
 ```
+
+> **The database needs pgvector installed on the server.** The first migration
+> runs `CREATE EXTENSION IF NOT EXISTS "vector"`, which only *enables* an
+> extension the host already has — it cannot install one. `pnpm db:up` uses the
+> `pgvector/pgvector:pg16` image, which has it. A stock PostgreSQL does not, and
+> fails with `extension "vector" is not available`. See
+> [Running without Docker](#running-without-docker) or
+> [docs/supabase.md](docs/supabase.md).
 
 Open <http://localhost:3000>. The **first account you register becomes the
 administrator**; everyone after that is a regular member.
@@ -200,15 +211,37 @@ If you seeded the demo data, sign in with `admin@unipods.dev` /
 
 ### Running without Docker
 
-Any PostgreSQL 16 with the `vector`, `pg_trgm` and `unaccent` extensions works.
-On Debian/Ubuntu:
+Any PostgreSQL 14+ with the `vector`, `pg_trgm` and `unaccent` extensions works.
+
+**Debian/Ubuntu** — packaged, so nothing to build:
 
 ```bash
 sudo apt-get install -y postgresql-16 postgresql-16-pgvector redis-server
 sudo -u postgres createdb unipods
 ```
 
-Then point `DATABASE_URL` at it and run `pnpm db:migrate`.
+**macOS** — `brew install pgvector` alongside your PostgreSQL.
+
+**Supabase** — hosted, with pgvector already on the server; see
+[docs/supabase.md](docs/supabase.md). Redis is still yours to run.
+
+**Windows** — pgvector ships no binary, so a native PostgreSQL install means
+compiling it with Visual Studio's C++ toolchain (`nmake /F Makefile.win`, with
+`PGROOT` pointing at your install). Docker or Supabase avoid that entirely, and
+both are faster to get working.
+
+Then point `DATABASE_URL` at it and run `pnpm db:deploy`.
+
+If a migration already failed against that database, Prisma refuses to continue
+until the failure is cleared:
+
+```bash
+pnpm exec prisma migrate resolve --rolled-back 20260916185810_init
+pnpm db:deploy
+```
+
+That only updates Prisma's bookkeeping — it does not fix the cause, so install
+the extension first or the next run fails identically.
 
 ---
 
@@ -221,7 +254,7 @@ with a message naming each problem, rather than at the first request.
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | yes | PostgreSQL with pgvector |
-| `DIRECT_DATABASE_URL` | no | Non-pooled URL for migrations (PgBouncer setups) |
+| `DIRECT_DATABASE_URL` | no | Non-pooled URL for migrations (PgBouncer, Supabase's pooler) |
 | `REDIS_URL` | yes | BullMQ queues |
 | `AI_PROVIDER` | yes | `openai` or `local` (see below) |
 | `OPENAI_API_KEY` | when `openai` | Refuses to start without it |
@@ -235,6 +268,9 @@ with a message naming each problem, rather than at the first request.
 | `CORS_ORIGINS` | yes | Comma-separated list |
 | `MAX_FILE_SIZE`, `RATE_LIMIT_*` | no | Upload and request limits |
 | `RAG_TOP_K`, `RAG_WEIGHT_*`, `CHUNK_*` | no | Retrieval tuning |
+| `TELEGRAM_BOT_TOKEN` | no | Set it and the API runs the Telegram bot; leave it empty and nothing starts |
+| `TELEGRAM_ALLOWED_CHATS` | no | Restrict the bot to specific group ids; empty means every group it joins |
+| `BOT_INGEST_SECRET` | no | Enables `POST /api/ingest/*`. Unset, those routes refuse every request |
 | `DEMO_MODE` | no | See [Demo mode](#demo-mode) |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_DEMO_MODE` | yes (web) | The only values exposed to the browser |
 
@@ -276,6 +312,60 @@ pnpm db:seed         # seed the demo community
 pnpm db:studio       # Prisma Studio
 pnpm db:reset        # drop and recreate (destructive)
 ```
+
+---
+
+## Chat platform bots
+
+The product is most useful where the conversation already happens. A Telegram
+bot sits in the group: it stores every message, so "what did I miss?" has
+something to answer from, and it replies when addressed — by `/ask`, an
+`@mention`, or a reply to something it said. Answers carry the same citations
+and the same refusals as the web app; the bot is not allowed to be more
+confident than the product.
+
+```bash
+TELEGRAM_BOT_TOKEN=...            # from @BotFather
+BOT_INGEST_SECRET=<48 random chars>
+```
+
+Create the bot with [@BotFather](https://t.me/BotFather), then **`/setprivacy`
+→ Disable**, then add it to the group. Without that step a bot only receives
+messages beginning with `/` and will never see ordinary conversation.
+
+The API polls Telegram rather than taking a webhook, so no public URL or tunnel
+is needed — it works from a laptop. With no token set, nothing starts and the
+API behaves exactly as before.
+
+### Or drive it from n8n
+
+Two endpoints do the work, both authenticated by `x-bot-secret`:
+
+| Route | Purpose |
+|---|---|
+| `POST /api/ingest/message` | Store captured messages. De-duplicates on `(channel, externalId)`, so replaying a batch is safe |
+| `POST /api/ingest/ask` | Ask a question; returns text ready to post back, with `answered`, `confidence` and `sources` |
+
+An importable workflow lives in [`n8n/`](n8n/README.md). Run the built-in bot
+*or* the workflow, not both — two pollers on one token compete for updates.
+
+Both routes are refused outright when `BOT_INGEST_SECRET` is unset, so a
+forgotten variable cannot leave an ingestion endpoint open.
+
+### WhatsApp
+
+WhatsApp is supported by **chat export**, not by a live bot, and that is a
+platform limit rather than a missing feature: the WhatsApp Business Cloud API
+does not support groups, so a business number cannot join a group and receive
+what is said in it. Live group capture is only possible through unofficial
+libraries that drive a real WhatsApp Web session, which breaks WhatsApp's terms
+and risks the number being banned.
+
+So: **Export chat → Without media**, then upload the `.txt` under **Messages →
+Import**. The parser handles the usual `[DD/MM/YYYY, HH:MM] Author: message`
+shape, stitches continuation lines back together, and skips WhatsApp's own
+system lines (`<Media omitted>`, join and leave notices, the encryption notice)
+so they never reach the index.
 
 ---
 

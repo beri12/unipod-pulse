@@ -132,6 +132,19 @@ describe('grounded answering', () => {
     expect(result.conflicting).toBe(true);
     expect(result.answer).toContain('disagree');
     expect(result.answer).toContain('Corrected Announcement');
+
+    // The conflict names each date the way its source wrote it, not a
+    // normalised key, and leaves it unquoted: a double-quoted span in an answer
+    // always means text copied verbatim from a source, and an extracted value
+    // is not that.
+    const conflictSentence = result.answer
+      .split('\n')
+      .find((line) => line.includes('disagree'));
+    expect(conflictSentence).toBeDefined();
+    expect(conflictSentence).toContain('September 17');
+    expect(conflictSentence).toContain('September 18');
+    expect(conflictSentence).not.toMatch(/"/);
+    expect(conflictSentence).not.toContain('09-17');
   });
 
   it('does not invent a conflict between the same date stated twice', async () => {

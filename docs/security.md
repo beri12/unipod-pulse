@@ -112,6 +112,41 @@ content — never both. Seeding a database that already holds real content canno
 contaminate answers, and the seed never overwrites the password of an existing
 non-demo account that shares an email.
 
+## Bot endpoints
+
+`POST /api/ingest/message` and `POST /api/ingest/ask` carry no user session —
+the caller is a machine — so they skip the JWT guard and are authenticated by a
+shared secret in `x-bot-secret` instead.
+
+Three choices matter here:
+
+**Unset means off, not open.** With no `BOT_INGEST_SECRET` configured the routes
+reject every request. Defaulting to open would mean a forgotten variable
+silently exposes an ingestion endpoint, and the person who forgot would have no
+signal at all.
+
+**The comparison is constant-time**, and a length mismatch still performs a
+comparison before returning false, so neither the secret's value nor its length
+leaks through response timing.
+
+**The ask route answers only from indexed content**, so it can return anything
+in the knowledge base to whoever holds the secret. Treat it as equivalent to a
+member's session, rotate it like a password, and keep it out of any workflow
+export you share — the n8n workflows in this repository read it from the
+environment for that reason.
+
+## Chat platform capture
+
+The Telegram bot stores every message in the groups it is added to. That is the
+point — "what did I miss?" cannot be answered from messages nobody kept — but it
+should be a decision the group makes knowingly, not a surprise.
+
+Two things follow. `TELEGRAM_ALLOWED_CHATS` restricts the bot to named group
+ids, so adding it to one group does not enrol every other group someone invites
+it to. And because knowledge has no per-source access control yet (see below),
+anything captured from a group is retrievable by any authenticated member of the
+workspace — so a private channel should not be captured until that lands.
+
 ## Known limitations
 
 Stated plainly, because a security section that lists only strengths is not

@@ -1,0 +1,116 @@
+{
+  "name": "UniPods Pulse — Telegram group",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [-360, 0],
+      "credentials": {
+        "telegramApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Pulse bot" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalises one Telegram update into the shape POST /api/ingest/message\n// expects, and decides whether the message is addressed to the bot.\n//\n// The bot answers only when spoken to — /ask, an @mention, or a reply to\n// something it said. Answering everything would add noise to the very group\n// this is meant to calm down.\n\nconst BOT_USERNAME = $env.PULSE_BOT_USERNAME || '';\n\nconst update = $input.first().json;\nconst message = update.message || update.channel_post;\nif (!message) return [];\n\nconst text = (message.text || message.caption || '').trim();\nif (!text || message.from?.is_bot) return [];\n\nconst chatId = message.chat.id;\nconst channel = message.chat.title || `telegram:${chatId}`;\nconst author = [message.from?.first_name, message.from?.last_name]\n  .filter(Boolean)\n  .join(' ')\n  .trim() || message.from?.username || 'Unknown';\n\nfunction addressedQuestion() {\n  const command = /^\\/(ask|pulse)(?:@\\S+)?\\s+([\\s\\S]+)$/i.exec(text);\n  if (command) return command[2].trim();\n  if (/^\\/(ask|pulse)(?:@\\S+)?$/i.test(text)) return null;\n  if (text.startsWith('/')) return null;\n  if (BOT_USERNAME) {\n    const mention = new RegExp(`@${BOT_USERNAME}\\\\b`, 'gi');\n    if (mention.test(text)) {\n      const stripped = text.replace(mention, ' ').replace(/\\s+/g, ' ').trim();\n      return stripped.length > 2 ? stripped : null;\n    }\n  }\n  if (message.reply_to_message?.from?.is_bot) return text;\n  if (message.chat.type === 'private') return text;\n  return null;\n}\n\nconst question = addressedQuestion();\n\nreturn [\n  {\n    json: {\n      chatId,\n      replyToMessageId: message.message_id,\n      isQuestion: question !== null,\n      question: question || '',\n      payload: {\n        messages: [\n          {\n            externalId: `tg:${chatId}:${message.message_id}`,\n            channel,\n            authorName: author,\n            authorId: message.from ? String(message.from.id) : undefined,\n            content: text,\n            messageDate: new Date(message.date * 1000).toISOString(),\n            replyToExternalId: message.reply_to_message\n              ? `tg:${chatId}:${message.reply_to_message.message_id}`\n              : undefined,\n          },\n        ],\n      },\n    },\n  },\n];"
+      },
+      "id": "normalise",
+      "name": "Normalise message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-140, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PULSE_API_URL }}/api/ingest/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-bot-secret", "value": "={{ $env.PULSE_BOT_SECRET }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "id": "store",
+      "name": "Store message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "conditions": [
+            {
+              "id": "is-question",
+              "leftValue": "={{ $('Normalise message').item.json.isQuestion }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "gate",
+      "name": "Addressed to the bot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [300, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PULSE_API_URL }}/api/ingest/ask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-bot-secret", "value": "={{ $env.PULSE_BOT_SECRET }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ question: $('Normalise message').item.json.question, channel: 'telegram' }) }}",
+        "options": {}
+      },
+      "id": "ask",
+      "name": "Ask Pulse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, -80]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalise message').item.json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "reply_to_message_id": "={{ $('Normalise message').item.json.replyToMessageId }}",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "reply",
+      "name": "Reply in group",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [740, -80],
+      "credentials": {
+        "telegramApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Pulse bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": { "main": [[{ "node": "Normalise message", "type": "main", "index": 0 }]] },
+    "Normalise message": { "main": [[{ "node": "Store message", "type": "main", "index": 0 }]] },
+    "Store message": { "main": [[{ "node": "Addressed to the bot?", "type": "main", "index": 0 }]] },
+    "Addressed to the bot?": { "main": [[{ "node": "Ask Pulse", "type": "main", "index": 0 }], []] },
+    "Ask Pulse": { "main": [[{ "node": "Reply in group", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

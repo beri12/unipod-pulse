@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AdminModule } from './admin/admin.module';
+import { BotsModule } from './bots/bots.module';
 import { CatchUpModule } from './catch-up/catch-up.module';
 import { ChatModule } from './chat/chat.module';
 import { RequestContextInterceptor } from './common/interceptors/request-context.interceptor';
@@ -54,6 +55,7 @@ import { UsersModule } from './users/users.module';
     CatchUpModule,
     QuestionsModule,
     AdminModule,
+    BotsModule,
   ],
   providers: [
     // Order matters: the request context wraps everything so logs and guards

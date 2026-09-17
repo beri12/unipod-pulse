@@ -149,6 +149,20 @@ export const envSchema = z
     CHUNK_OVERLAP_TOKENS: intFromString(80, 0, 1000),
 
     DEMO_MODE: booleanish.default(false),
+
+    // --- Chat platform bots ---------------------------------------------
+    // Every bot setting is optional: with none of them set the API behaves
+    // exactly as before, so the web app never depends on a bot being
+    // configured.
+    TELEGRAM_BOT_TOKEN: z.string().optional(),
+    /** Group chat ids the bot will answer in. Empty means every group it joins. */
+    TELEGRAM_ALLOWED_CHATS: csv([]),
+    /**
+     * Shared secret for `POST /api/ingest/message`, the endpoint n8n (or any
+     * other automation) posts captured messages to. Without it the route is
+     * disabled rather than left open.
+     */
+    BOT_INGEST_SECRET: z.string().min(16).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.AI_PROVIDER === 'openai' && !value.OPENAI_API_KEY) {

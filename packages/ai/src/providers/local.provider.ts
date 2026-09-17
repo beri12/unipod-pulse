@@ -610,7 +610,10 @@ function detectConflict(selected: ScoredSentence[], intent: Intent): Conflict | 
   if (intent !== 'when' && intent !== 'howmany') return null;
   if (selected.length < 2) return null;
 
-  const byValue = new Map<string, ScoredSentence>();
+  // Grouped by the canonical value so "Sept 23" and "September 23, 2026" are
+  // one position, but carrying the text as the source actually wrote it: the
+  // canonical form is a comparison key, not something to show a reader.
+  const byValue = new Map<string, { entry: ScoredSentence; stated: string }>();
   for (const entry of selected) {
     // Prefer a concrete calendar date ("September 17") over a weekday name,
     // otherwise "Thursday" and "September 18" would look like a disagreement
@@ -625,22 +628,30 @@ function detectConflict(selected: ScoredSentence[], intent: Intent): Conflict | 
         : body.match(/\b\d+(?:\.\d+)?\b/);
     if (!match) continue;
     const key = intent === 'when' ? canonicalDateKey(match[0]) : normaliseValue(match[0]);
-    if (!byValue.has(key)) byValue.set(key, entry);
+    if (!byValue.has(key)) byValue.set(key, { entry, stated: match[0] });
   }
   if (byValue.size < 2) return null;
 
-  const entries = [...byValue.entries()];
-  const distinctSources = new Set(entries.map(([, entry]) => entry.item.sourceId));
+  const entries = [...byValue.values()];
+  const distinctSources = new Set(entries.map(({ entry }) => entry.item.sourceId));
   if (distinctSources.size < 2) return null;
 
   const dated = entries
-    .map(([value, entry]) => ({ value, entry, time: entry.item.date ? Date.parse(entry.item.date) : NaN }))
+    .map(({ entry, stated }) => ({
+      stated,
+      entry,
+      time: entry.item.date ? Date.parse(entry.item.date) : NaN,
+    }))
     .sort((a, b) => (Number.isNaN(b.time) ? -1 : b.time) - (Number.isNaN(a.time) ? -1 : a.time));
 
+  // Deliberately unquoted. Everywhere else in an answer a double-quoted span is
+  // text copied verbatim out of a source, which is what makes the quotes worth
+  // trusting; using them here for an extracted value would make the same marks
+  // mean two different things.
   const described = dated
     .map(
-      ({ value, entry }) =>
-        `"${value}" according to ${entry.item.title}${entry.item.date ? ` (${entry.item.date.slice(0, 10)})` : ''} [${entry.item.index}]`,
+      ({ stated, entry }) =>
+        `${stated} according to ${entry.item.title}${entry.item.date ? ` (${entry.item.date.slice(0, 10)})` : ''} [${entry.item.index}]`,
     )
     .join(', while another source says ');
 

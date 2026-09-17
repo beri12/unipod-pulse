@@ -170,4 +170,22 @@ describe('TxtImporter', () => {
       new TxtImporter().import('just some prose', { channel: 'general' }),
     ).rejects.toThrow(/format/i);
   });
+
+  it('skips the chat app\'s own system lines', async () => {
+    const log = [
+      '[17/09/2026, 09:00] Amina: Rehearsal moved to Thursday 14:00.',
+      '[17/09/2026, 09:01] Bekele: <Media omitted>',
+      '[17/09/2026, 09:02] Amina: Messages and calls are end-to-end encrypted.',
+      '[17/09/2026, 09:03] Chala: Noted, thanks.',
+      '[17/09/2026, 09:04] Amina: This message was deleted',
+    ].join('\n');
+
+    const outcome = await new TxtImporter().import(log, { channel: 'Pulse Group' });
+
+    expect(outcome.messages).toHaveLength(2);
+    expect(outcome.messages.map((message) => message.content)).toEqual([
+      'Rehearsal moved to Thursday 14:00.',
+      'Noted, thanks.',
+    ]);
+  });
 });
