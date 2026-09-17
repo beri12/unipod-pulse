@@ -27,6 +27,7 @@
     "db:studio": "prisma studio --schema prisma/schema.prisma",
     "db:reset": "prisma migrate reset --schema prisma/schema.prisma",
     "rag:eval": "tsx scripts/rag-eval.ts",
+    "bot:smoke": "node scripts/bot-smoke.mjs",
     "lint:fix": "eslint . --fix",
     "fixtures": "node scripts/make-test-fixtures.mjs"
   },

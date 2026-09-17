@@ -305,6 +305,7 @@ pnpm lint            # ESLint across the workspace
 pnpm test            # unit tests
 pnpm test:e2e        # end-to-end (needs PostgreSQL)
 pnpm rag:eval        # RAG evaluation against the seeded knowledge base
+pnpm bot:smoke       # end-to-end check of the bot endpoints (needs the app running)
 
 pnpm db:up           # start PostgreSQL + Redis
 pnpm db:migrate      # apply migrations
@@ -351,6 +352,23 @@ An importable workflow lives in [`n8n/`](n8n/README.md). Run the built-in bot
 
 Both routes are refused outright when `BOT_INGEST_SECRET` is unset, so a
 forgotten variable cannot leave an ingestion endpoint open.
+
+### Checking it works
+
+With the app running (`pnpm dev`) and `BOT_INGEST_SECRET` set:
+
+```bash
+pnpm bot:smoke
+```
+
+It walks the path a real Telegram message takes — store, replay, ask, refuse —
+and prints the reply exactly as the bot would post it. Nine checks, including
+that the endpoints reject a missing or wrong secret, that a replayed batch
+imports nothing twice, and that a question the messages do not cover is refused
+rather than guessed at.
+
+It writes to a channel of its own (`Bot smoke test`) and prints the one-line SQL
+to remove it again, so it never mixes with real content.
 
 ### WhatsApp
 
