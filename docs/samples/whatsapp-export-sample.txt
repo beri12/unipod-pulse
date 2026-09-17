@@ -1,0 +1,19 @@
+17/09/2026, 08:02 - Messages and calls are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.
+17/09/2026, 08:02 - Amara Obi created group "UniPods Cohort 7"
+17/09/2026, 08:03 - Amara Obi added Bekele Tadesse
+17/09/2026, 08:05 - Amara Obi: Morning everyone. Announcement: the demo day venue has changed. We are now in the Innovation Hall, not Lab B.
+17/09/2026, 08:06 - Amara Obi: Same time as before, 14:00 on Thursday the 24th.
+17/09/2026, 08:11 - Bekele Tadesse: Thanks. Is the pitch deck template still on the shared drive?
+17/09/2026, 08:12 - Amara Obi: Yes, under Resources > Demo Day. It is the one named pitch-template-v3.
+17/09/2026, 08:19 - Chala Bekele: <Media omitted>
+17/09/2026, 08:21 - Fatima Hassan: Quick question, how long is each pitch?
+17/09/2026, 08:24 - Amara Obi: Five minutes for the pitch and three minutes for questions. Hard stop at eight minutes, the timer is strict this year.
+17/09/2026, 09:02 - Daniel Mekonnen: Decision from yesterday's call for anyone who missed it: we are going with a shared judging rubric across all three tracks rather than separate ones per track.
+17/09/2026, 09:03 - Daniel Mekonnen: The rubric is 40 points for impact, 30 for technical execution, 20 for the demo itself and 10 for the presentation.
+17/09/2026, 09:31 - Fatima Hassan: Reminder that the final submission form closes at 23:59 on Wednesday the 23rd, which is the day before demo day. Do not leave it to the last hour, the form has been slow under load in previous years.
+17/09/2026, 10:14 - Chala Bekele: Are teams allowed to change members after declaration?
+17/09/2026, 10:20 - Amara Obi: Only with written approval from the organising committee. Email the committee address, do not just post here.
+17/09/2026, 11:47 - Bekele Tadesse: This message was deleted
+17/09/2026, 12:03 - Sara Girma: For anyone setting up locally, the API needs Redis running or the background jobs never start. Took me an hour to work that out.
+17/09/2026, 14:15 - Amara Obi: Correction to my earlier message: the venue is the Innovation Hall, but the entrance is on the north side, not the main entrance. Security will not let you through the main doors.
+18/09/2026, 07:55 - Fatima Hassan left

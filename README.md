@@ -380,10 +380,18 @@ libraries that drive a real WhatsApp Web session, which breaks WhatsApp's terms
 and risks the number being banned.
 
 So: **Export chat → Without media**, then upload the `.txt` under **Messages →
-Import**. The parser handles the usual `[DD/MM/YYYY, HH:MM] Author: message`
-shape, stitches continuation lines back together, and skips WhatsApp's own
-system lines (`<Media omitted>`, join and leave notices, the encryption notice)
-so they never reach the index.
+Import**, choosing *Plain-text chat log* and giving the channel a name. The
+parser handles the usual `[DD/MM/YYYY, HH:MM] Author: message` shape, stitches
+continuation lines back together, and drops WhatsApp's own system lines
+(`<Media omitted>`, join and leave notices, the encryption notice) so they never
+reach the index.
+
+To try it without exporting your own chat, upload
+[`docs/samples/whatsapp-export-sample.txt`](docs/samples/whatsapp-export-sample.txt).
+It contains 19 lines of which 13 are real messages, so a successful import
+reports `imported: 13` — the other six are system notices, and seeing them
+dropped is half the point of the sample. Then ask "how long is each pitch?" or
+"what did we decide about the judging rubric?".
 
 ---
 

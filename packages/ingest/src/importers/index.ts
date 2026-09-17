@@ -339,6 +339,15 @@ export class TxtImporter implements MessageImporter {
     const linePattern =
       /^\[?(\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}(?:,)?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?)\]?\s*[-–]?\s*([^:]{1,80}?):\s?([\s\S]*)$/;
 
+    // The same leading stamp, without requiring an author. A line that carries
+    // one is a new entry in the log, so it is never a continuation of the
+    // message above it — which matters because a chat app's unattributed
+    // notices ("Fatima left", "Amara created group") have no `Author:` part and
+    // would otherwise be glued onto whatever a member last said, attributing
+    // the app's own bookkeeping to a person.
+    const timestampPrefix =
+      /^\[?\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}(?:,)?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\]?\s*[-–]?\s/;
+
     const messages: NormalizedMessage[] = [];
     const warnings: string[] = [];
 
@@ -368,6 +377,9 @@ export class TxtImporter implements MessageImporter {
             options,
           ),
         );
+      } else if (timestampPrefix.test(line)) {
+        // A timestamped line with no author: a system notice. Dropped.
+        continue;
       } else if (messages.length > 0) {
         const previous = messages[messages.length - 1] as NormalizedMessage;
         previous.content = `${previous.content}\n${line}`.trim();

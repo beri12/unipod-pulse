@@ -188,4 +188,40 @@ describe('TxtImporter', () => {
       'Noted, thanks.',
     ]);
   });
+
+  it('drops the chat app\'s unattributed notices instead of gluing them to the message above', async () => {
+    const log = [
+      '17/09/2026, 08:02 - Messages and calls are end-to-end encrypted.',
+      '17/09/2026, 08:02 - Amara created group "Cohort 7"',
+      '17/09/2026, 08:03 - Amara added Bekele',
+      '17/09/2026, 09:00 - Amara: The venue moved to the Innovation Hall.',
+      '17/09/2026, 09:01 - Bekele: Noted.',
+      '18/09/2026, 07:55 - Fatima left',
+    ].join('\n');
+
+    const { messages } = await new TxtImporter().import(log, { channel: 'Cohort 7' });
+
+    expect(messages).toHaveLength(2);
+    // The notices carry a timestamp, so they are new entries in the log, never
+    // a continuation — the last message must not have "Fatima left" appended.
+    expect(messages[1]?.content).toBe('Noted.');
+    expect(messages.some((message) => /created group|added|left|encrypted/.test(message.content))).toBe(
+      false,
+    );
+  });
+
+  it('still stitches genuine continuation lines back together', async () => {
+    const log = [
+      '17/09/2026, 09:00 - Amara: The rubric is:',
+      '40 points for impact',
+      '30 for technical execution',
+    ].join('\n');
+
+    const { messages } = await new TxtImporter().import(log, { channel: 'Cohort 7' });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.content).toBe(
+      'The rubric is:\n40 points for impact\n30 for technical execution',
+    );
+  });
 });
