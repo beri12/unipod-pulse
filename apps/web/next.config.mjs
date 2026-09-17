@@ -15,6 +15,13 @@ const nextConfig = {
   // generated pair is untracked noise that shows up in `git status` after
   // simply running the app.
   agentRules: false,
+  // Next 16 blocks dev-only resources (the HMR socket among them) from any
+  // host it does not recognise. The dev server answers on localhost, so
+  // opening the app as 127.0.0.1 — or over the LAN to try it from a phone —
+  // silently loses hot reload and, with it, hydration: the page renders but
+  // nothing on it responds. Naming the hosts here is dev-only and changes
+  // nothing about production.
+  allowedDevOrigins: ['localhost', '127.0.0.1', '0.0.0.0', '*.local'],
   // The design-system package ships TypeScript source so it can share the app's
   // build settings and Tailwind scanning.
   transpilePackages: ['@unipods/ui'],

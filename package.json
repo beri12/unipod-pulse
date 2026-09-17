@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "turbo run dev",
+    "dev:clean": "pnpm --filter @unipods/web exec rimraf .next && turbo run dev",
     "build": "turbo run build",
     "lint": "eslint .",
     "typecheck": "turbo run typecheck",

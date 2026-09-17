@@ -209,6 +209,46 @@ administrator**; everyone after that is a regular member.
 If you seeded the demo data, sign in with `admin@unipods.dev` /
 `unipods-demo-2026` and set `DEMO_MODE=true` so that content is visible.
 
+### If the web app will not start
+
+Two failures account for almost all of them, and neither is a code problem.
+
+**`Cannot find module for page: route not found /page`**, alongside
+`ENOENT ... .next/dev/server/pages/_app/build-manifest.json`.
+
+This app is App Router only — a healthy `.next/dev/server` contains no `pages/`
+directory at all. Next only reaches for the Pages Router `_app` when the App
+Router build is not there to serve, so the message means the dev build is
+incomplete rather than merely stale. Start from a clean cache:
+
+```bash
+pnpm dev:clean          # deletes .next, then starts dev
+```
+
+If it comes back, something outside the project is interfering with `.next`.
+Turbopack writes thousands of small files there, and two things on Windows
+routinely eat them mid-write:
+
+- **A synced folder.** `Desktop`, `Documents` and `OneDrive` are synced by
+  default on most Windows installs, and a sync client will happily upload,
+  lock and restore files while the dev server is still writing them. Move the
+  project somewhere unsynced — `C:\dev\unipods-pulse` — or exclude it in the
+  OneDrive settings.
+- **Real-time antivirus.** Add the project folder to the exclusions list in
+  Windows Security → Virus & threat protection.
+
+Deleting `.next` fixes the symptom; moving the project off a synced path fixes
+the cause.
+
+**Nothing on the page responds to clicks**, though it renders.
+
+The dev server's hot-reload socket is blocked, and hydration never finishes.
+Next 16 blocks dev resources from any host it does not recognise, so this
+appears when the app is opened as `127.0.0.1:3000` or over the LAN rather than
+`localhost:3000`. The hosts are listed in `allowedDevOrigins` in
+`apps/web/next.config.mjs`; add yours there if you reach the app another way.
+The dev server prints a warning naming the blocked host when it happens.
+
 ### Running without Docker
 
 Any PostgreSQL 14+ with the `vector`, `pg_trgm` and `unaccent` extensions works.
