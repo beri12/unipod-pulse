@@ -216,16 +216,31 @@ Two failures account for almost all of them, and neither is a code problem.
 **`Cannot find module for page: route not found /page`**, alongside
 `ENOENT ... .next/dev/server/pages/_app/build-manifest.json`.
 
-This app is App Router only — a healthy `.next/dev/server` contains no `pages/`
-directory at all. Next only reaches for the Pages Router `_app` when the App
-Router build is not there to serve, so the message means the dev build is
-incomplete rather than merely stale. Start from a clean cache:
+Almost always a stray **Pages Router directory**. This app is App Router only,
+and `/page` is what Next calls a file named `page.tsx` sitting in a `pages/`
+folder — while `_app` is a Pages Router entry point nothing here needs. One such
+folder switches the Pages Router on and produces this, naming neither the folder
+nor the cause. Because it is untracked, `git pull` will not remove it and
+clearing `.next` does not help, so it survives every obvious remedy:
+
+```bash
+# from the repository root
+rm -rf apps/web/pages apps/web/src/pages       # PowerShell: rmdir /s /q apps\web\pages
+pnpm dev
+```
+
+`pnpm dev` now checks for this before starting and says so plainly if it finds
+one, so the confusing version of the error should not reach you again.
+
+If neither folder exists, the dev build is incomplete rather than
+misconfigured. Start from a clean cache:
 
 ```bash
 pnpm dev:clean          # deletes .next, then starts dev
 ```
 
-If it comes back, something outside the project is interfering with `.next`.
+If it still comes back, something outside the project is interfering with
+`.next`.
 Turbopack writes thousands of small files there, and two things on Windows
 routinely eat them mid-write:
 

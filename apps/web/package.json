@@ -4,9 +4,9 @@
   "private": true,
   "description": "UniPods Pulse web app",
   "scripts": {
-    "dev": "next dev --port 3000",
-    "dev:clean": "rimraf .next && next dev --port 3000",
-    "build": "next build",
+    "dev": "node scripts/check-router.mjs && next dev --port 3000",
+    "dev:clean": "node scripts/check-router.mjs && rimraf .next && next dev --port 3000",
+    "build": "node scripts/check-router.mjs && next build",
     "start": "next start --port 3000",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rimraf .next"
