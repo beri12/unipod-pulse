@@ -59,7 +59,7 @@ export class AnswerService {
     const question = message.text.trim();
     if (!explicit && !looksLikeQuestion(question)) return null;
 
-    const entries = await this.findAnswerSources(question, message.chatId);
+    const entries = await this.findAnswerSources(question, message);
     const composed = await this.claude.composeAnswer(question, entries);
 
     // Small talk is not a knowledge gap. Recording it would fill the
@@ -103,8 +103,17 @@ export class AnswerService {
    * large one is narrowed by summary first, so cost does not grow with the
    * number of call transcripts imported.
    */
-  private async findAnswerSources(question: string, scope: string): Promise<KnowledgeEntry[]> {
-    const candidates = this.store.entriesFor(scope);
+  private async findAnswerSources(
+    question: string,
+    message: IncomingMessage,
+  ): Promise<KnowledgeEntry[]> {
+    // A group sees its own knowledge plus community-wide sources. A private
+    // chat sees everything, so asking the bot directly works as well as asking
+    // in the group — which is the whole point of answering people directly.
+    const candidates =
+      !message.isGroup && this.config.privateSeesEverything
+        ? this.store.entriesEverywhere()
+        : this.store.entriesFor(message.chatId);
     if (candidates.length === 0) return [];
     if (candidates.length <= this.config.maxReadEntries) return candidates;
 

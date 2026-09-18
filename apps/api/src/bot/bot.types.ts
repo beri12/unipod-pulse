@@ -16,6 +16,14 @@ export interface QuotedMessage {
   fromBot?: boolean;
 }
 
+/** A voice note, audio file or video note attached to a message. */
+export interface IncomingAudio {
+  data: Buffer;
+  /** Name with a real extension — the transcription API reads the format from it. */
+  filename: string;
+  durationSeconds?: number;
+}
+
 export interface IncomingMessage {
   channel: BotChannel;
   /** Where a reply must be sent: a phone number, a JID, or a Telegram chat id. */
@@ -32,6 +40,8 @@ export interface IncomingMessage {
   timestamp: Date;
   /** Set when the sender replied to an earlier message. */
   quoted?: QuotedMessage;
+  /** Set when the message is a voice note or an audio file. */
+  audio?: IncomingAudio;
   /**
    * True when the sender is an admin of this group. Undefined when the
    * transport could not determine it. Only admin answers are learned.

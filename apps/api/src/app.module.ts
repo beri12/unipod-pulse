@@ -3,6 +3,7 @@ import { createObserveModule } from '@nestjs/observe';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { KnowledgeModule } from './knowledge/knowledge.module.js';
+import { VoiceModule } from './voice/voice.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 import { WhatsappModule } from './whatsapp/whatsapp.module.js';
 
@@ -20,6 +21,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     WhatsappModule,
     TelegramModule,
     KnowledgeModule,
+    VoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

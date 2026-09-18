@@ -6,12 +6,13 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { BOT_CONFIG, type BotConfig } from '../bot/bot.config.js';
+import type { IncomingAudio } from '../bot/bot.types.js';
 import { BotPipelineService } from '../bot/bot-pipeline.service.js';
 import { DedupeService } from '../bot/dedupe.service.js';
 import { TelegramApiService } from './telegram-api.service.js';
 import { mapTelegramMessage } from './telegram-message.mapper.js';
 import { TELEGRAM_CONFIG, type TelegramConfig } from './telegram.config.js';
-import type { TelegramUpdate } from './telegram.types.js';
+import type { TelegramAudio, TelegramUpdate } from './telegram.types.js';
 
 const POLL_ERROR_BASE_MS = 2000;
 const POLL_ERROR_MAX_MS = 60_000;
@@ -89,6 +90,13 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       message.senderIsAdmin = await this.isAdmin(message.chatId, message.senderId);
     }
 
+    const spoken = raw.voice ?? raw.audio ?? raw.video_note;
+    if (spoken) {
+      message.audio = (await this.downloadAudio(spoken)) ?? undefined;
+      // Audio we could not fetch and with no caption leaves nothing to act on.
+      if (!message.audio && !message.text) return;
+    }
+
     const reply = await this.pipeline.handle(message);
     if (!reply) return;
 
@@ -114,6 +122,24 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Telegram connected as @${this.botUsername}`);
     } catch (error) {
       this.logger.error(`Could not reach Telegram: ${(error as Error).message}`);
+    }
+  }
+
+  private async downloadAudio(spoken: TelegramAudio): Promise<IncomingAudio | null> {
+    try {
+      const file = await this.api.downloadFile(spoken.file_id);
+      if (!file) return null;
+
+      return {
+        data: file.data,
+        // Telegram voice notes are opus in an ogg container; the extension is
+        // what tells the transcription API how to decode them.
+        filename: spoken.file_name ?? file.filename,
+        durationSeconds: spoken.duration,
+      };
+    } catch (error) {
+      this.logger.warn(`Could not download audio: ${(error as Error).message}`);
+      return null;
     }
   }
 

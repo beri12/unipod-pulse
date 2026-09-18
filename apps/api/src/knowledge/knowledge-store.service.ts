@@ -47,6 +47,14 @@ export class KnowledgeStoreService implements OnModuleInit {
     );
   }
 
+  /**
+   * Everything, for a member asking the bot privately: they are one person in
+   * one community, not a separate audience.
+   */
+  entriesEverywhere(): KnowledgeEntry[] {
+    return this.entries();
+  }
+
   findEntry(id: string): KnowledgeEntry | undefined {
     return this.entries().find((entry) => entry.id === id);
   }

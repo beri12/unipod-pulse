@@ -35,6 +35,28 @@ export class TelegramApiService {
     );
   }
 
+  /**
+   * Downloads an attachment. Telegram serves files from a different host than
+   * the API, and the path is only valid for about an hour.
+   */
+  async downloadFile(fileId: string): Promise<{ data: Buffer; filename: string } | null> {
+    const file = await this.call<{ file_path?: string }>('getFile', { file_id: fileId });
+    if (!file.file_path) return null;
+
+    const response = await fetch(
+      `https://api.telegram.org/file/bot${this.config.token}/${file.file_path}`,
+      { signal: AbortSignal.timeout(120_000) },
+    );
+    if (!response.ok) {
+      throw new Error(`Downloading ${file.file_path} failed with ${response.status}`);
+    }
+
+    return {
+      data: Buffer.from(await response.arrayBuffer()),
+      filename: file.file_path.split('/').pop() ?? 'audio.ogg',
+    };
+  }
+
   /** Group admins, used to decide whose answers are worth learning. */
   getChatAdministrators(chatId: string): Promise<{ user: TelegramUser }[]> {
     return this.call<{ user: TelegramUser }[]>('getChatAdministrators', { chat_id: chatId });

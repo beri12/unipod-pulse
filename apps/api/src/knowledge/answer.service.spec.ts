@@ -184,6 +184,33 @@ describe('AnswerService', () => {
       expect(claude.composeCalls[0]?.entries.map((entry) => entry.title)).toEqual(['one']);
     });
 
+    it('lets a private chat read every group\'s knowledge', async () => {
+      // Someone messaging the bot directly is one member of one community,
+      // not a separate audience with its own empty knowledge base.
+      const { answer, store, claude } = await build();
+      await addEntry(store, { scope: 'group-1', title: 'from group one' });
+      await addEntry(store, { scope: 'group-2', title: 'from group two' });
+
+      await answer.answer(message({ isGroup: false, chatId: 'dm-with-amina' }));
+
+      expect(claude.composeCalls[0]?.entries.map((entry) => entry.title)).toEqual([
+        'from group one',
+        'from group two',
+      ]);
+    });
+
+    it('keeps groups separate when several communities share one bot', async () => {
+      const { answer, store, claude } = await build({
+        KNOWLEDGE_PRIVATE_SEES_EVERYTHING: 'false',
+      });
+      await addEntry(store, { scope: 'group-1', title: 'from group one' });
+
+      await answer.answer(message({ isGroup: false, chatId: 'dm-with-amina' }));
+
+      // Nothing from the other community reaches the model.
+      expect(claude.composeCalls[0]?.entries).toEqual([]);
+    });
+
     it('includes community-wide sources alongside this chat', async () => {
       const { answer, store, claude } = await build();
       await addEntry(store, { scope: CHAT, title: 'chat one' });

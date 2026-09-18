@@ -20,6 +20,15 @@ export interface TelegramMessageEntity {
   length: number;
 }
 
+export interface TelegramAudio {
+  file_id: string;
+  file_unique_id: string;
+  duration?: number;
+  mime_type?: string;
+  file_name?: string;
+  file_size?: number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
@@ -28,6 +37,9 @@ export interface TelegramMessage {
   text?: string;
   caption?: string;
   entities?: TelegramMessageEntity[];
+  voice?: TelegramAudio;
+  audio?: TelegramAudio;
+  video_note?: TelegramAudio;
   caption_entities?: TelegramMessageEntity[];
   reply_to_message?: TelegramMessage;
 }

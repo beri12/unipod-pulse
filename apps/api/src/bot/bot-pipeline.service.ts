@@ -10,6 +10,14 @@ import { MessageLogService } from './message-log.service.js';
 export type MessageObserver = (message: IncomingMessage) => Promise<unknown>;
 
 /**
+ * Runs before routing and may rewrite the message — this is how a voice note
+ * becomes text. Returning a reply ends the turn there.
+ */
+export type MessagePreprocessor = (
+  message: IncomingMessage,
+) => Promise<OutgoingReply | null | undefined>;
+
+/**
  * The one path every message takes, whatever transport it arrived on:
  * observe, route, record.
  *
@@ -19,6 +27,7 @@ export type MessageObserver = (message: IncomingMessage) => Promise<unknown>;
 export class BotPipelineService {
   private readonly logger = new Logger(BotPipelineService.name);
   private readonly observers: MessageObserver[] = [];
+  private readonly preprocessors: MessagePreprocessor[] = [];
 
   constructor(
     private readonly router: CommandRouterService,
@@ -29,7 +38,23 @@ export class BotPipelineService {
     this.observers.push(observer);
   }
 
+  registerPreprocessor(preprocessor: MessagePreprocessor): void {
+    this.preprocessors.push(preprocessor);
+  }
+
   async handle(message: IncomingMessage): Promise<OutgoingReply | null> {
+    for (const preprocessor of this.preprocessors) {
+      try {
+        const reply = await preprocessor(message);
+        if (reply) {
+          this.messageLog.record(message, reply.text);
+          return reply;
+        }
+      } catch (error) {
+        this.logger.error('A message preprocessor failed', error as Error);
+      }
+    }
+
     for (const observer of this.observers) {
       try {
         await observer(message);

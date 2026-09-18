@@ -23,6 +23,15 @@ export interface KnowledgeConfig {
   archiveLimit: number;
   /** Bearer token required by the ingestion endpoints, if set. */
   ingestToken: string;
+  /**
+   * In a private chat, answer from every group's knowledge.
+   *
+   * On for a single community, which is the normal case: a member messaging
+   * the bot directly should get the same answers as in the group. Turn it off
+   * when one bot serves several communities that must not see each other's
+   * information.
+   */
+  privateSeesEverything: boolean;
 }
 
 const bool = (value: string | undefined, fallback: boolean): boolean =>
@@ -48,5 +57,6 @@ export function loadKnowledgeConfig(env: NodeJS.ProcessEnv = process.env): Knowl
     chunkOverlap: Number(env.KNOWLEDGE_CHUNK_OVERLAP ?? 200),
     archiveLimit: Number(env.KNOWLEDGE_ARCHIVE_LIMIT ?? 500),
     ingestToken: env.KNOWLEDGE_INGEST_TOKEN ?? '',
+    privateSeesEverything: bool(env.KNOWLEDGE_PRIVATE_SEES_EVERYTHING, true),
   };
 }

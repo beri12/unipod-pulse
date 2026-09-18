@@ -29,7 +29,9 @@ export function mapTelegramMessage(
   { botUsername, commandPrefix }: MapOptions,
 ): IncomingMessage | null {
   const text = (message.text ?? message.caption ?? '').trim();
-  if (!text) return null;
+  // A voice note has no text yet — transcription fills it in later.
+  const spoken = message.voice ?? message.audio ?? message.video_note;
+  if (!text && !spoken) return null;
 
   const isGroup = message.chat.type === 'group' || message.chat.type === 'supergroup';
   const me = botUsername.toLowerCase().replace(/^@/, '');
