@@ -32,15 +32,28 @@ WHATSAPP_VERIFY_TOKEN=test-token node dist/main.js
 In a second terminal, pretend to be Meta:
 
 ```bash
-curl -X POST http://localhost:3000/whatsapp/webhook \
-  -H 'Content-Type: application/json' \
-  -d '{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{
-        "contacts":[{"wa_id":"212600000000","profile":{"name":"Amina"}}],
-        "messages":[{"from":"212600000000","id":"wamid.TEST1","timestamp":"1767225600",
-                     "type":"text","text":{"body":"!help"}}]}}]}]}'
+./scripts/fake-message.sh "!help"
 ```
 
-Then see what the bot received and what it answered:
+```
+you  > !help
+bot  > Commands I understand:
+       !about — What this bot is
+       !echo — Repeat back what you wrote — useful while testing
+       !help — List the available commands
+       !ping — Check that the bot is alive
+       !whoami — Show how the bot sees you
+```
+
+The script builds Meta's real webhook payload, POSTs it, and prints the reply.
+You can change who is writing:
+
+```bash
+FROM=212611111111 NAME=Youssef ./scripts/fake-message.sh "!whoami"
+PORT=3001 ./scripts/fake-message.sh "!echo hello"
+```
+
+Or do it by hand and read the log:
 
 ```bash
 curl http://localhost:3000/whatsapp/messages
@@ -214,12 +227,22 @@ Return a string to reply, or `null` to stay silent.
 ## 4. Tests
 
 ```bash
-npm run test       # command routing, de-duplication, signature checking
-npm run test:e2e   # the webhook over real HTTP, no WhatsApp account needed
+cd apps/api
+npm run test       # 25 tests: command routing, de-duplication, signature checking
+npm run test:e2e   # 13 tests: the webhook over real HTTP, no WhatsApp account needed
 ```
 
 The e2e suite posts Meta's real payload shape at the webhook, so you can develop
 the whole flow without a phone.
+
+Three levels, cheapest first:
+
+| What | Command | Needs |
+|---|---|---|
+| Logic | `npm run test` | nothing |
+| Whole HTTP flow | `npm run test:e2e` | nothing |
+| By hand, live server | `./scripts/fake-message.sh "!ping"` | the API running |
+| Real WhatsApp | send from your phone | credentials + tunnel (part 1) |
 
 ---
 
