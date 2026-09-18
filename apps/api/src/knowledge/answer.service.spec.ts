@@ -2,7 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IncomingMessage } from '../bot/bot.types.js';
-import { AnswerService, NO_ANSWER_REPLY } from './answer.service.js';
+import { AnswerService, NO_ANSWER_REPLY, SMALL_TALK_REPLY } from './answer.service.js';
 import type { KnowledgeClaudeService } from './claude.service.js';
 import { KnowledgeStoreService } from './knowledge-store.service.js';
 import { loadKnowledgeConfig } from './knowledge.config.js';
@@ -26,11 +26,12 @@ const message = (overrides: Partial<IncomingMessage> = {}): IncomingMessage => (
 /** Stands in for Claude; records what it was asked to read. */
 class FakeClaude {
   enabled = true;
-  composed: { answer: string | null; confidence: number; citationIds: string[] } = {
-    answer: null,
-    confidence: 0,
-    citationIds: [],
-  };
+  composed: {
+    answer: string | null;
+    confidence: number;
+    citationIds: string[];
+    isCommunityQuestion?: boolean;
+  } = { answer: null, confidence: 0, citationIds: [] };
   selection: string[] = [];
   composeCalls: { question: string; entries: KnowledgeEntry[] }[] = [];
   selectCalls: { question: string; candidates: KnowledgeEntry[] }[] = [];
@@ -195,6 +196,72 @@ describe('AnswerService', () => {
         'chat one',
         'the call',
       ]);
+    });
+  });
+
+  describe('small talk', () => {
+    it('answers small talk politely without recording a gap', async () => {
+      const { answer, store, claude } = await build();
+      await addEntry(store);
+      claude.composed = {
+        answer: null,
+        confidence: 0,
+        citationIds: [],
+        isCommunityQuestion: false,
+      };
+
+      const reply = await answer.answer(message({ text: 'how are you?' }));
+
+      expect(reply).toBe(SMALL_TALK_REPLY);
+      // An organiser should never see "how are you?" in the backlog.
+      expect(store.openGaps(CHAT)).toHaveLength(0);
+    });
+
+    it('still records a gap for a real question Claude could not answer', async () => {
+      const { answer, store, claude } = await build();
+      await addEntry(store);
+      claude.composed = {
+        answer: null,
+        confidence: 0,
+        citationIds: [],
+        isCommunityQuestion: true,
+      };
+
+      expect(await answer.answer(message({ text: 'is there parking?' }))).toBe(NO_ANSWER_REPLY);
+      expect(store.openGaps(CHAT)).toHaveLength(1);
+    });
+  });
+
+  describe('answers that say nothing', () => {
+    it('refuses an answer that only repeats the question', async () => {
+      const { answer, store, claude } = await build();
+      const entry = await addEntry(store);
+      // The failure this guards against: quoting the asker's own words back
+      // at them as though they were the community's answer.
+      claude.composed = {
+        answer: 'Is there parking nearby?',
+        confidence: 0.99,
+        citationIds: [entry.id],
+      };
+
+      const reply = await answer.answer(message({ text: 'is there parking nearby?' }));
+
+      expect(reply).toBe(NO_ANSWER_REPLY);
+      expect(store.openGaps(CHAT)).toHaveLength(1);
+    });
+
+    it('keeps a real answer that happens to share words with the question', async () => {
+      const { answer, store, claude } = await build();
+      const entry = await addEntry(store);
+      claude.composed = {
+        answer: 'Yes, there is parking nearby, behind the building.',
+        confidence: 0.9,
+        citationIds: [entry.id],
+      };
+
+      const reply = await answer.answer(message({ text: 'is there parking nearby?' }));
+
+      expect(reply).toContain('behind the building');
     });
   });
 

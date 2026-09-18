@@ -96,7 +96,31 @@ bot    > The weekly call moved to Thursday at 18h.
 **The bot only uses the community's own sources.** It is told never to add
 outside knowledge, and that answering wrongly is worse than not answering.
 
-## 4. When it does not know
+## 4. What it refuses to do
+
+Three failures are guarded against explicitly, because each one makes a bot
+worse than useless:
+
+| | |
+|---|---|
+| **Quoting you to yourself** | An "answer" that just repeats the question is thrown away. The group's raw chat is never an authority — a member's question or guess is not an answer. |
+| **Treating small talk as a question** | "Hi", "how are you?", "thanks" get a short friendly reply, and are never recorded as gaps. The organisers' backlog stays real questions only. |
+| **Talking about itself** | The bot never mentions its sources list, its confidence, or how it works. It answers, or it says it cannot. |
+
+```
+member > Hi
+bot    > Hello 👋 I am the UniPod Pulse bot.
+         Type !help to see everything I can do.
+```
+
+Not:
+
+```
+bot    > Here is what the community records say:
+         - "Beri Beker: Hi" [1]     ← never
+```
+
+## 5. When it does not know
 
 ```
 bot > I couldn't find a confirmed answer in the available community information.
@@ -122,7 +146,7 @@ From then on everyone who asks about parking gets that answer. **The questions
 the group keeps asking become the FAQ automatically**, sorted by how much time
 they are costing.
 
-## 5. Catching up
+## 6. Catching up
 
 ```
 member > !catchup

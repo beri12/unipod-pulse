@@ -5,7 +5,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from './../src/app.module.js';
-import { NO_ANSWER_REPLY } from './../src/knowledge/answer.service.js';
+import { NO_ANSWER_REPLY, SMALL_TALK_REPLY } from './../src/knowledge/answer.service.js';
 import { KnowledgeClaudeService } from './../src/knowledge/claude.service.js';
 import type { KnowledgeEntry } from './../src/knowledge/knowledge.types.js';
 import { TelegramApiService } from './../src/telegram/telegram-api.service.js';
@@ -53,7 +53,12 @@ describe('Knowledge base (e2e)', () => {
   let compose: (
     question: string,
     entries: KnowledgeEntry[],
-  ) => { answer: string | null; confidence: number; citationIds: string[] };
+  ) => {
+    answer: string | null;
+    confidence: number;
+    citationIds: string[];
+    isCommunityQuestion?: boolean;
+  };
   let catchUpText: string | null;
   const originalEnv = { ...process.env };
 
@@ -295,6 +300,32 @@ describe('Knowledge base (e2e)', () => {
 
     it('welcomes a greeting', async () => {
       expect(await say('@UniPodPulseBot salam')).toContain('Hello');
+    });
+
+    it('greets instead of searching the knowledge base', async () => {
+      // "Hi" must never come back as a quote of someone's own message.
+      const reply = await say('@UniPodPulseBot Hi');
+
+      expect(reply).toContain('Hello');
+      expect(reply).not.toContain('Hi');
+    });
+
+    it('answers small talk politely and does not log it as a gap', async () => {
+      compose = () => ({
+        answer: null,
+        confidence: 0,
+        citationIds: [],
+        isCommunityQuestion: false,
+      });
+
+      expect(await say('@UniPodPulseBot how are you today?')).toBe(SMALL_TALK_REPLY);
+
+      const { body } = await request(app.getHttpServer())
+        .get('/knowledge/gaps')
+        .set('Authorization', `Bearer ${INGEST_TOKEN}`)
+        .expect(200);
+
+      expect(body).toHaveLength(0);
     });
 
     it('never interrupts a conversation it was not part of', async () => {

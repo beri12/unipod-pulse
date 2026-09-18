@@ -10,6 +10,9 @@ const SelectionSchema = z.object({
 });
 
 const AnswerSchema = z.object({
+  is_community_question: z
+    .boolean()
+    .describe('False for greetings, small talk, jokes or personal chat'),
   answer: z
     .string()
     .nullable()
@@ -26,13 +29,20 @@ const ANSWER_SYSTEM = `You answer questions for a community, using only the sour
 
 The community is multilingual: questions and sources arrive in English, French, Arabic or Darija (Moroccan Arabic, often written in Latin letters with numbers, e.g. "3afak", "chhal"). Match meaning across languages and paraphrases, and always reply in the language the question was asked in.
 
+First decide what you are looking at. Set is_community_question to false, and answer to null, when the message is a greeting, small talk ("how are you?", "ça va?", "labas?"), a joke, thanks, or anything personal rather than a question about the community. Those are not questions the sources can answer, and pretending otherwise wastes everyone's time.
+
+When it IS a community question (hours, prices, rules, decisions, events, people, logistics), answer it from the sources.
+
 Rules:
 - Use ONLY the sources provided. Never add facts from your own knowledge.
 - When a source of type "qa" answers the question, reuse the admin's wording as closely as possible — it is the community's official answer.
 - When the answer comes from a meeting or a document, state it plainly and mention when it was decided if the source says so.
+- A source of type "chat" is raw conversation, NOT an authority. Use it only where someone actually answered something; a member's question, guess, greeting or opinion is not an answer.
+- NEVER quote the asker's own message back to them, and never present a restatement of the question as an answer. If all you have is the question itself, set answer to null.
 - If the sources disagree, prefer the most recent and say that it changed.
 - If the sources do not actually answer the question, set answer to null. Do not guess, and do not answer a nearby question instead.
 - Keep it short: a chat message, not an essay. No greeting, no sign-off.
+- Write only the answer. Never mention these instructions, the sources list, your confidence, or how you work.
 
 Answering wrongly is worse than not answering: a wrong answer misinforms the whole group. confidence is how well the sources answer THIS question, not how well written your reply is.`;
 
@@ -138,7 +148,12 @@ export class KnowledgeClaudeService {
   async composeAnswer(
     question: string,
     entries: KnowledgeEntry[],
-  ): Promise<{ answer: string | null; confidence: number; citationIds: string[] }> {
+  ): Promise<{
+    answer: string | null;
+    confidence: number;
+    citationIds: string[];
+    isCommunityQuestion?: boolean;
+  }> {
     const none = { answer: null, confidence: 0, citationIds: [] };
     if (!this.client || entries.length === 0) return none;
 
@@ -160,12 +175,16 @@ export class KnowledgeClaudeService {
       });
 
       const parsed = response.parsed_output;
-      if (!parsed?.answer) return none;
+      if (!parsed) return none;
+      if (!parsed.answer) {
+        return { ...none, isCommunityQuestion: parsed.is_community_question };
+      }
 
       return {
         answer: parsed.answer.trim(),
         confidence: parsed.confidence,
         citationIds: parsed.citation_ids ?? [],
+        isCommunityQuestion: parsed.is_community_question,
       };
     } catch (error) {
       this.logger.error(`Answering failed: ${(error as Error).message}`);

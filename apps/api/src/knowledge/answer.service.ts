@@ -13,6 +13,24 @@ export const NO_ANSWER_REPLY = [
 ].join('\n');
 
 /**
+ * What the bot says to small talk.
+ *
+ * Not everything with a question mark is a question for the knowledge base.
+ * "How are you?" is not a gap an organiser needs to fill, and answering it by
+ * quoting the group's chat history back at someone is worse than useless.
+ */
+export const SMALL_TALK_REPLY =
+  "I'm here 👋 I answer questions about the community — type !help to see what I can do.";
+
+/** Strips punctuation, case and spacing so two phrasings can be compared. */
+const normalise = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+/**
  * Answers a question from everything the community knows — admin answers,
  * call transcripts, notes — and records what it could not answer.
  */
@@ -43,6 +61,20 @@ export class AnswerService {
 
     const entries = await this.findAnswerSources(question, message.chatId);
     const composed = await this.claude.composeAnswer(question, entries);
+
+    // Small talk is not a knowledge gap. Recording it would fill the
+    // organisers' backlog with "how are you?".
+    if (composed.isCommunityQuestion === false) {
+      this.logger.debug(`"${question}" is small talk — not recording a gap`);
+      return SMALL_TALK_REPLY;
+    }
+
+    // An "answer" that merely repeats the question answers nothing. Treat it
+    // as a miss rather than echoing someone's own words back at them.
+    if (composed.answer && normalise(composed.answer) === normalise(question)) {
+      this.logger.warn(`Discarding an answer that only restates the question: "${question}"`);
+      composed.answer = null;
+    }
 
     if (composed.answer && composed.confidence >= this.config.minConfidence) {
       const citations = composed.citationIds
