@@ -1,4 +1,4 @@
-import type { IncomingMessage } from '../whatsapp.types.js';
+import type { IncomingMessage } from '../bot.types.js';
 
 export interface CommandContext {
   message: IncomingMessage;

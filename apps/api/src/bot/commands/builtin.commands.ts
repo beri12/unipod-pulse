@@ -15,7 +15,7 @@ export const builtinCommands: BotCommand[] = [
     name: 'about',
     description: 'What this bot is',
     handler: () =>
-      'UniPod Pulse bot 🤖\nI answer commands here and in private chat.\nType !help to see what I can do.',
+      'UniPod Pulse bot 🤖\nI work on WhatsApp and Telegram, in private chats and in groups.\nType !help to see what I can do.',
   },
   {
     name: 'whoami',

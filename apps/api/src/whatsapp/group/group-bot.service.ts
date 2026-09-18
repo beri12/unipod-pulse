@@ -6,11 +6,11 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { WAMessage, WASocket } from '@whiskeysockets/baileys';
-import { CommandRouterService } from '../commands/command-router.service.js';
-import { DedupeService } from '../dedupe.service.js';
-import { MessageLogService } from '../message-log.service.js';
+import { CommandRouterService } from '../../bot/commands/command-router.service.js';
+import { DedupeService } from '../../bot/dedupe.service.js';
+import { MessageLogService } from '../../bot/message-log.service.js';
 import { WHATSAPP_CONFIG, type WhatsappConfig } from '../whatsapp.config.js';
-import type { IncomingMessage } from '../whatsapp.types.js';
+import type { IncomingMessage } from '../../bot/bot.types.js';
 
 const GROUP_SUFFIX = '@g.us';
 const RECONNECT_BASE_MS = 2000;
@@ -191,7 +191,7 @@ export class GroupBotService implements OnModuleInit, OnModuleDestroy {
     if (messageId && !this.dedupe.markIfNew(`group:${messageId}`)) return;
 
     const message: IncomingMessage = {
-      channel: 'group',
+      channel: 'whatsapp-group',
       chatId,
       senderId: isGroup ? (raw.key.participant ?? chatId) : chatId,
       senderName: raw.pushName ?? undefined,

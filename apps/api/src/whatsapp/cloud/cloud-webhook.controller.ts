@@ -12,11 +12,11 @@ import {
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
-import { CommandRouterService } from '../commands/command-router.service.js';
-import { DedupeService } from '../dedupe.service.js';
-import { MessageLogService } from '../message-log.service.js';
+import { CommandRouterService } from '../../bot/commands/command-router.service.js';
+import { DedupeService } from '../../bot/dedupe.service.js';
+import { MessageLogService } from '../../bot/message-log.service.js';
 import { WHATSAPP_CONFIG, type WhatsappConfig } from '../whatsapp.config.js';
-import type { IncomingMessage } from '../whatsapp.types.js';
+import type { IncomingMessage } from '../../bot/bot.types.js';
 import { CloudApiService } from './cloud-api.service.js';
 import type { CloudContact, CloudTextMessage, CloudWebhookBody } from './cloud-api.types.js';
 import { isValidCloudSignature } from './cloud-signature.js';
@@ -90,12 +90,6 @@ export class CloudWebhookController {
     return 'EVENT_RECEIVED';
   }
 
-  /** Recent traffic, for eyeballing what the bot actually received. */
-  @Get('messages')
-  recent() {
-    return this.messageLog.recent();
-  }
-
   private async handle(body: CloudWebhookBody): Promise<void> {
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
@@ -131,7 +125,7 @@ export class CloudWebhookController {
     const seconds = Number(raw.timestamp);
 
     return {
-      channel: 'cloud',
+      channel: 'whatsapp-cloud',
       chatId: raw.from,
       senderId: raw.from,
       senderName: contact?.profile?.name,

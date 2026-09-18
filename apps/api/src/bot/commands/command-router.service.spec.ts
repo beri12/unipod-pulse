@@ -1,9 +1,9 @@
-import { loadWhatsappConfig } from '../whatsapp.config.js';
-import type { IncomingMessage } from '../whatsapp.types.js';
+import { loadBotConfig } from '../bot.config.js';
+import type { IncomingMessage } from '../bot.types.js';
 import { CommandRouterService } from './command-router.service.js';
 
 const message = (overrides: Partial<IncomingMessage> = {}): IncomingMessage => ({
-  channel: 'cloud',
+  channel: 'whatsapp-cloud',
   chatId: '212600000000',
   senderId: '212600000000',
   senderName: 'Amina',
@@ -19,7 +19,7 @@ describe('CommandRouterService', () => {
   let router: CommandRouterService;
 
   beforeEach(() => {
-    router = new CommandRouterService(loadWhatsappConfig({}));
+    router = new CommandRouterService(loadBotConfig({}));
   });
 
   describe('in a private chat', () => {
@@ -38,6 +38,7 @@ describe('CommandRouterService', () => {
     it('points an unknown word at the help command', async () => {
       const reply = await router.route(message({ text: 'banana' }));
 
+      expect(reply?.text).toContain(`I don't know`);
       expect(reply?.text).toContain('!help');
     });
 
@@ -57,7 +58,7 @@ describe('CommandRouterService', () => {
   describe('in a group', () => {
     const groupMessage = (overrides: Partial<IncomingMessage> = {}) =>
       message({
-        channel: 'group',
+        channel: 'whatsapp-group',
         chatId: '120363000000000000@g.us',
         senderId: '212600000000@s.whatsapp.net',
         isGroup: true,
@@ -89,6 +90,18 @@ describe('CommandRouterService', () => {
       );
 
       expect(reply).toBeNull();
+    });
+
+    it('greets a member who says hello after mentioning the bot', async () => {
+      const reply = await router.route(
+        groupMessage({ text: '@212600000000 salam', mentionedMe: true }),
+      );
+
+      expect(reply?.text).toContain('Hello');
+    });
+
+    it('ignores a greeting nobody addressed to the bot', async () => {
+      expect(await router.route(groupMessage({ text: 'salam everyone' }))).toBeNull();
     });
 
     it('greets a bare mention', async () => {
@@ -144,9 +157,45 @@ describe('CommandRouterService', () => {
     });
   });
 
+  describe('greetings', () => {
+    it.each([
+      'hello',
+      'Hello',
+      'HI',
+      'hey',
+      'salam',
+      'Salam!',
+      'bonjour',
+      'Bonsoir',
+      'hola',
+      'مرحبا',
+      'start',
+    ])('welcomes "%s" instead of saying it is unknown', async (text) => {
+      const reply = await router.route(message({ text }));
+
+      expect(reply?.text).toContain('Hello');
+      expect(reply?.text).toContain('!help');
+      expect(reply?.text).not.toContain(`I don't know`);
+    });
+
+    it('still reports a genuinely unknown word', async () => {
+      const reply = await router.route(message({ text: 'xyzzy' }));
+
+      expect(reply?.text).toContain(`I don't know`);
+    });
+
+    it('lets a real command win over a greeting word', async () => {
+      // "start" is a greeting, but if someone registers it as a command the
+      // command must take priority.
+      router.register({ name: 'start', description: 'Begin', handler: () => 'started' });
+
+      expect((await router.route(message({ text: 'start' })))?.text).toBe('started');
+    });
+  });
+
   it('honours a custom command prefix', async () => {
     const slashRouter = new CommandRouterService(
-      loadWhatsappConfig({ WHATSAPP_COMMAND_PREFIX: '/' }),
+      loadBotConfig({ BOT_COMMAND_PREFIX: '/' }),
     );
 
     expect((await slashRouter.route(message({ text: '/ping' })))?.text).toBe('pong ✅');

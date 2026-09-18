@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { IncomingMessage } from './whatsapp.types.js';
+import type { IncomingMessage } from './bot.types.js';
 
 export interface LoggedMessage extends IncomingMessage {
   reply: string | null;
@@ -8,8 +8,8 @@ export interface LoggedMessage extends IncomingMessage {
 const MAX_KEPT = 200;
 
 /**
- * In-memory ring buffer of recent traffic, exposed at GET /whatsapp/messages
- * so you can see what the bot received without reading server logs.
+ * In-memory ring buffer of recent traffic across every channel, exposed at
+ * GET /bot/messages so you can see what the bot received without reading logs.
  *
  * This is deliberately not persistent — see README for the Postgres note.
  */

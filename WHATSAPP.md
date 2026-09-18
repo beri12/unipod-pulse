@@ -1,15 +1,16 @@
 # WhatsApp bot — setup and testing
 
-Two transports share one command layer:
+> For Telegram, see [TELEGRAM.md](TELEGRAM.md). All channels share one command
+> layer, so a command written once works everywhere.
 
 ```
-  Cloud API (official)   ─┐
-   private chats only     ├─>  CommandRouterService  ─>  reply
-  Baileys bot            ─┘
+  WhatsApp Cloud API (official)  ─┐
+   private chats only             │
+  WhatsApp Baileys bot           ─┼─>  CommandRouterService  ─>  reply
+   groups + private, unofficial   │
+  Telegram (official)            ─┘
    groups + private
 ```
-
-Write a command once and it works on both.
 
 > **Important:** the official WhatsApp Cloud API **cannot read or write in
 > groups**. Meta does not allow it. If you want the bot inside your WhatsApp
@@ -56,7 +57,7 @@ PORT=3001 ./scripts/fake-message.sh "!echo hello"
 Or do it by hand and read the log:
 
 ```bash
-curl http://localhost:3000/whatsapp/messages
+curl http://localhost:3000/bot/messages
 ```
 
 No WhatsApp account needed. This is the loop to use while writing commands.
@@ -168,7 +169,7 @@ block it. Run it somewhere with normal outbound network access.
 
 By default the bot listens in every group it is added to. To restrict it:
 
-1. Send `!ping` in the group, then `curl http://localhost:3000/whatsapp/messages`
+1. Send `!ping` in the group, then `curl http://localhost:3000/bot/messages`
 2. Copy the `chatId` (it ends in `@g.us`)
 3. Put it in `.env`:
 
@@ -189,7 +190,7 @@ reports are what get numbers banned.
 
 ## 3. Adding your own commands
 
-Edit `src/whatsapp/commands/builtin.commands.ts`:
+Edit `src/bot/commands/builtin.commands.ts`:
 
 ```ts
 {
@@ -204,7 +205,8 @@ Edit `src/whatsapp/commands/builtin.commands.ts`:
 }
 ```
 
-It immediately works in private chat **and** in groups, and appears in `!help`.
+It immediately works on WhatsApp **and** Telegram, in private chats **and** in
+groups, and appears in `!help`.
 
 From another module you can also call `commandRouter.register({...})`.
 
@@ -216,7 +218,7 @@ The handler receives:
 | `message.senderId` | phone number or JID of the writer |
 | `message.senderName` | WhatsApp display name |
 | `message.isGroup` | true in a group |
-| `message.channel` | `'cloud'` or `'group'` |
+| `message.channel` | `'whatsapp-cloud'`, `'whatsapp-group'` or `'telegram'` |
 | `args` | words after the command |
 | `rest` | raw text after the command |
 
@@ -252,10 +254,10 @@ Three levels, cheapest first:
 |---|---|---|
 | `GET` | `/whatsapp/webhook` | Meta's verification handshake |
 | `POST` | `/whatsapp/webhook` | Inbound messages from Meta |
-| `GET` | `/whatsapp/messages` | Recent traffic, for debugging |
+| `GET` | `/bot/messages` | Recent traffic on every channel, for debugging |
 
-`GET /whatsapp/messages` is an unauthenticated debug view of recent message
-content. Remove it or put it behind auth before going to production.
+`GET /bot/messages` is an unauthenticated debug view of recent message content.
+Remove it or put it behind auth before going to production.
 
 ## Not included yet
 

@@ -46,6 +46,7 @@ describe('WhatsApp Cloud API webhook (e2e)', () => {
     Object.assign(process.env, {
       WHATSAPP_VERIFY_TOKEN: VERIFY_TOKEN,
       WHATSAPP_GROUP_BOT_ENABLED: 'false',
+      TELEGRAM_BOT_TOKEN: '',
       ...env,
     });
 
@@ -168,16 +169,16 @@ describe('WhatsApp Cloud API webhook (e2e)', () => {
       expect(sent).toHaveLength(0);
     });
 
-    it('records what it received for GET /whatsapp/messages', async () => {
+    it('records what it received for GET /bot/messages', async () => {
       await request(app.getHttpServer())
         .post('/whatsapp/webhook')
         .send(inboundText('!ping', 'wamid.LOGGED'))
         .expect(200);
 
-      const { body } = await request(app.getHttpServer()).get('/whatsapp/messages').expect(200);
+      const { body } = await request(app.getHttpServer()).get('/bot/messages').expect(200);
 
       expect(body[0]).toMatchObject({
-        channel: 'cloud',
+        channel: 'whatsapp-cloud',
         senderName: 'Amina',
         text: '!ping',
         reply: 'pong ✅',

@@ -1,15 +1,15 @@
 /**
  * Channel-neutral message shape.
  *
- * Both transports (the official Cloud API and the Baileys group bot) normalise
- * their very different payloads into this, so the command layer never needs to
- * know where a message came from.
+ * Every transport (WhatsApp Cloud API, the WhatsApp group bot, Telegram)
+ * normalises its very different payload into this, so the command layer never
+ * needs to know where a message came from.
  */
-export type WhatsappChannel = 'cloud' | 'group';
+export type BotChannel = 'whatsapp-cloud' | 'whatsapp-group' | 'telegram';
 
 export interface IncomingMessage {
-  channel: WhatsappChannel;
-  /** Where a reply must be sent: a phone number (cloud) or a JID (group). */
+  channel: BotChannel;
+  /** Where a reply must be sent: a phone number, a JID, or a Telegram chat id. */
   chatId: string;
   /** Who wrote it. In groups this differs from chatId. */
   senderId: string;

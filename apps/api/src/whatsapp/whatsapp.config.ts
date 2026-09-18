@@ -20,8 +20,6 @@ export interface WhatsappConfig {
     /** Human-like pause before replying, in ms. */
     replyDelayMs: number;
   };
-  /** Prefix that marks a message as a command, e.g. "!help". */
-  commandPrefix: string;
 }
 
 const bool = (value: string | undefined, fallback = false): boolean =>
@@ -54,6 +52,5 @@ export function loadWhatsappConfig(env: NodeJS.ProcessEnv = process.env): Whatsa
       allowedGroups: list(env.WHATSAPP_ALLOWED_GROUPS),
       replyDelayMs: Number(env.WHATSAPP_REPLY_DELAY_MS ?? 1200),
     },
-    commandPrefix: env.WHATSAPP_COMMAND_PREFIX ?? '!',
   };
 }
