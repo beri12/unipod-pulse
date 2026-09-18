@@ -12,9 +12,8 @@ import {
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
-import { CommandRouterService } from '../../bot/commands/command-router.service.js';
+import { BotPipelineService } from '../../bot/bot-pipeline.service.js';
 import { DedupeService } from '../../bot/dedupe.service.js';
-import { MessageLogService } from '../../bot/message-log.service.js';
 import { WHATSAPP_CONFIG, type WhatsappConfig } from '../whatsapp.config.js';
 import type { IncomingMessage } from '../../bot/bot.types.js';
 import { CloudApiService } from './cloud-api.service.js';
@@ -28,9 +27,8 @@ export class CloudWebhookController {
   constructor(
     @Inject(WHATSAPP_CONFIG) private readonly config: WhatsappConfig,
     private readonly cloudApi: CloudApiService,
-    private readonly router: CommandRouterService,
+    private readonly pipeline: BotPipelineService,
     private readonly dedupe: DedupeService,
-    private readonly messageLog: MessageLogService,
   ) {}
 
   /**
@@ -105,8 +103,7 @@ export class CloudWebhookController {
             continue;
           }
 
-          const reply = await this.router.route(message);
-          this.messageLog.record(message, reply?.text ?? null);
+          const reply = await this.pipeline.handle(message);
 
           if (reply) {
             await this.cloudApi.markRead(message.messageId);

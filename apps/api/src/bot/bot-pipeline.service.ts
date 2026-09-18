@@ -1,0 +1,45 @@
+import { Injectable, Logger } from '@nestjs/common';
+import type { IncomingMessage, OutgoingReply } from './bot.types.js';
+import { CommandRouterService } from './commands/command-router.service.js';
+import { MessageLogService } from './message-log.service.js';
+
+/**
+ * Watches every message without replying to it — used to learn from what
+ * people write. An observer must never block or break the reply.
+ */
+export type MessageObserver = (message: IncomingMessage) => Promise<unknown>;
+
+/**
+ * The one path every message takes, whatever transport it arrived on:
+ * observe, route, record.
+ *
+ * Transports keep only what is specific to them: de-duplication and sending.
+ */
+@Injectable()
+export class BotPipelineService {
+  private readonly logger = new Logger(BotPipelineService.name);
+  private readonly observers: MessageObserver[] = [];
+
+  constructor(
+    private readonly router: CommandRouterService,
+    private readonly messageLog: MessageLogService,
+  ) {}
+
+  registerObserver(observer: MessageObserver): void {
+    this.observers.push(observer);
+  }
+
+  async handle(message: IncomingMessage): Promise<OutgoingReply | null> {
+    for (const observer of this.observers) {
+      try {
+        await observer(message);
+      } catch (error) {
+        this.logger.error('A message observer failed', error as Error);
+      }
+    }
+
+    const reply = await this.router.route(message);
+    this.messageLog.record(message, reply?.text ?? null);
+    return reply;
+  }
+}

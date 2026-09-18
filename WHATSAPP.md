@@ -267,3 +267,12 @@ would need a Prisma schema and a `DATABASE_URL`, which do not exist in this repo
 yet — adding them would have meant you could not run any of the above without a
 database first. `MessageLogService` is the single place to change when you want
 that.
+
+
+---
+
+## Answering questions automatically
+
+Beyond commands, the bot can learn answers from group admins and reply to the
+same question when it is asked again in different words — see
+[LEARNED-ANSWERS.md](LEARNED-ANSWERS.md).

@@ -6,6 +6,12 @@ import { builtinCommands } from './builtin.commands.js';
 import type { BotCommand, CommandContext } from './command.types.js';
 
 /**
+ * Consulted when no command matched: the place where a knowledge base can
+ * answer a free-form question. Returns null to stay silent.
+ */
+export type QuestionAnswerer = (message: IncomingMessage) => Promise<string | null>;
+
+/**
  * The single place that decides what the bot says, for every transport.
  *
  * The group rule matters: in a group the bot stays silent unless it is
@@ -16,6 +22,7 @@ import type { BotCommand, CommandContext } from './command.types.js';
 export class CommandRouterService {
   private readonly logger = new Logger(CommandRouterService.name);
   private readonly commands = new Map<string, BotCommand>();
+  private answerer?: QuestionAnswerer;
 
   constructor(@Inject(BOT_CONFIG) private readonly config: BotConfig) {
     for (const command of builtinCommands) this.register(command);
@@ -31,6 +38,11 @@ export class CommandRouterService {
     for (const alias of command.aliases ?? []) {
       this.commands.set(alias.toLowerCase(), command);
     }
+  }
+
+  /** Installs the fallback used for questions that are not commands. */
+  setAnswerer(answerer: QuestionAnswerer): void {
+    this.answerer = answerer;
   }
 
   /** Commands in registration order, aliases excluded. */
@@ -78,6 +90,16 @@ export class CommandRouterService {
     // "hello", "salam", "bonjour" — someone's first message. Welcome them
     // instead of answering that the word is unknown.
     if (isGreeting(name)) return { text: this.renderWelcome() };
+
+    // Not a command: it may be a question an admin has already answered.
+    if (this.answerer) {
+      try {
+        const answer = await this.answerer(message);
+        if (answer) return { text: answer };
+      } catch (error) {
+        this.logger.error('The question answerer failed', error as Error);
+      }
+    }
 
     // In a group an unknown word after a mention is usually just chatter.
     if (message.isGroup && !hasPrefix) return null;

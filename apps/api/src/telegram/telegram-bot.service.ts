@@ -6,9 +6,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { BOT_CONFIG, type BotConfig } from '../bot/bot.config.js';
-import { CommandRouterService } from '../bot/commands/command-router.service.js';
+import { BotPipelineService } from '../bot/bot-pipeline.service.js';
 import { DedupeService } from '../bot/dedupe.service.js';
-import { MessageLogService } from '../bot/message-log.service.js';
 import { TelegramApiService } from './telegram-api.service.js';
 import { mapTelegramMessage } from './telegram-message.mapper.js';
 import { TELEGRAM_CONFIG, type TelegramConfig } from './telegram.config.js';
@@ -18,6 +17,8 @@ const POLL_ERROR_BASE_MS = 2000;
 const POLL_ERROR_MAX_MS = 60_000;
 /** How often to retry getMe after it failed, in ms. */
 const USERNAME_RETRY_MS = 60_000;
+/** How long a group's admin list is trusted before refetching. */
+const ADMIN_CACHE_MS = 5 * 60_000;
 
 /**
  * Telegram transport.
@@ -33,14 +34,14 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   private stopping = false;
   private pollFailures = 0;
   private usernameAttemptedAt = 0;
+  private readonly adminCache = new Map<string, { ids: Set<string>; fetchedAt: number }>();
 
   constructor(
     @Inject(TELEGRAM_CONFIG) private readonly config: TelegramConfig,
     @Inject(BOT_CONFIG) private readonly botConfig: BotConfig,
     private readonly api: TelegramApiService,
-    private readonly router: CommandRouterService,
+    private readonly pipeline: BotPipelineService,
     private readonly dedupe: DedupeService,
-    private readonly messageLog: MessageLogService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -84,8 +85,11 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
     if (!this.dedupe.markIfNew(`telegram:${message.messageId}`)) return;
 
-    const reply = await this.router.route(message);
-    this.messageLog.record(message, reply?.text ?? null);
+    if (message.isGroup) {
+      message.senderIsAdmin = await this.isAdmin(message.chatId, message.senderId);
+    }
+
+    const reply = await this.pipeline.handle(message);
     if (!reply) return;
 
     await this.api.sendMessage(message.chatId, reply.text);
@@ -110,6 +114,27 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Telegram connected as @${this.botUsername}`);
     } catch (error) {
       this.logger.error(`Could not reach Telegram: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * @returns true or false when known, undefined when Telegram could not be
+   * asked — the caller must not treat "unknown" as "admin".
+   */
+  private async isAdmin(chatId: string, userId: string): Promise<boolean | undefined> {
+    const cached = this.adminCache.get(chatId);
+    if (cached && Date.now() - cached.fetchedAt < ADMIN_CACHE_MS) {
+      return cached.ids.has(userId);
+    }
+
+    try {
+      const administrators = await this.api.getChatAdministrators(chatId);
+      const ids = new Set(administrators.map((entry) => String(entry.user.id)));
+      this.adminCache.set(chatId, { ids, fetchedAt: Date.now() });
+      return ids.has(userId);
+    } catch (error) {
+      this.logger.warn(`Could not read admins of ${chatId}: ${(error as Error).message}`);
+      return undefined;
     }
   }
 

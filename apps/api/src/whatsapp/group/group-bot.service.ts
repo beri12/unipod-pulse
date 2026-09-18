@@ -6,9 +6,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { WAMessage, WASocket } from '@whiskeysockets/baileys';
-import { CommandRouterService } from '../../bot/commands/command-router.service.js';
+import { BotPipelineService } from '../../bot/bot-pipeline.service.js';
 import { DedupeService } from '../../bot/dedupe.service.js';
-import { MessageLogService } from '../../bot/message-log.service.js';
 import { WHATSAPP_CONFIG, type WhatsappConfig } from '../whatsapp.config.js';
 import type { IncomingMessage } from '../../bot/bot.types.js';
 
@@ -17,6 +16,8 @@ const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS = 60_000;
 /** How long to wait for a QR or a live connection before saying something. */
 const HANDSHAKE_WARN_MS = 30_000;
+/** How long a group's admin list is trusted before refetching. */
+const ADMIN_CACHE_MS = 5 * 60_000;
 
 /** "212600000000:12@s.whatsapp.net" -> "212600000000" */
 const bareId = (jid?: string | null): string => jid?.split('@')[0]?.split(':')[0] ?? '';
@@ -39,12 +40,12 @@ export class GroupBotService implements OnModuleInit, OnModuleDestroy {
   private reconnectTimer?: NodeJS.Timeout;
   private handshakeTimer?: NodeJS.Timeout;
   private stopping = false;
+  private readonly adminCache = new Map<string, { ids: Set<string>; fetchedAt: number }>();
 
   constructor(
     @Inject(WHATSAPP_CONFIG) private readonly config: WhatsappConfig,
-    private readonly router: CommandRouterService,
+    private readonly pipeline: BotPipelineService,
     private readonly dedupe: DedupeService,
-    private readonly messageLog: MessageLogService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -190,20 +191,24 @@ export class GroupBotService implements OnModuleInit, OnModuleDestroy {
     const messageId = raw.key.id ?? '';
     if (messageId && !this.dedupe.markIfNew(`group:${messageId}`)) return;
 
+    const quoted = this.extractQuote(raw, socket);
+    const senderId = isGroup ? (raw.key.participant ?? chatId) : chatId;
+
     const message: IncomingMessage = {
       channel: 'whatsapp-group',
       chatId,
-      senderId: isGroup ? (raw.key.participant ?? chatId) : chatId,
+      senderId,
       senderName: raw.pushName ?? undefined,
       messageId,
       text,
       isGroup,
       mentionedMe: this.isMentioned(raw, socket),
       timestamp: new Date(Number(raw.messageTimestamp ?? 0) * 1000),
+      quoted,
+      senderIsAdmin: isGroup ? await this.isAdmin(chatId, senderId) : undefined,
     };
 
-    const reply = await this.router.route(message);
-    this.messageLog.record(message, reply?.text ?? null);
+    const reply = await this.pipeline.handle(message);
     if (!reply) return;
 
     await socket.readMessages([raw.key]);
@@ -211,6 +216,60 @@ export class GroupBotService implements OnModuleInit, OnModuleDestroy {
     // A pause so replies do not land instantly one after another.
     await this.sleep(this.config.group.replyDelayMs);
     await socket.sendMessage(chatId, { text: reply.text }, { quoted: raw });
+  }
+
+  /**
+   * @returns true or false when known, undefined when the group metadata could
+   * not be read — the caller must not treat "unknown" as "admin".
+   */
+  private async isAdmin(chatId: string, senderId: string): Promise<boolean | undefined> {
+    const cached = this.adminCache.get(chatId);
+    if (cached && Date.now() - cached.fetchedAt < ADMIN_CACHE_MS) {
+      return cached.ids.has(bareId(senderId));
+    }
+
+    try {
+      const metadata = await this.socket?.groupMetadata(chatId);
+      if (!metadata) return undefined;
+
+      const ids = new Set(
+        metadata.participants
+          // "admin" and "superadmin"; a plain member has no admin field.
+          .filter((participant) => Boolean(participant.admin))
+          .flatMap((participant) => [bareId(participant.id), bareId(participant.lid)])
+          .filter(Boolean),
+      );
+      this.adminCache.set(chatId, { ids, fetchedAt: Date.now() });
+      return ids.has(bareId(senderId));
+    } catch (error) {
+      this.logger.warn(`Could not read admins of ${chatId}: ${(error as Error).message}`);
+      return undefined;
+    }
+  }
+
+  private extractQuote(raw: WAMessage, socket: WASocket): IncomingMessage['quoted'] {
+    const context = raw.message?.extendedTextMessage?.contextInfo;
+    const quoted = context?.quotedMessage;
+    if (!quoted) return undefined;
+
+    const text = (
+      quoted.conversation ??
+      quoted.extendedTextMessage?.text ??
+      quoted.imageMessage?.caption ??
+      quoted.videoMessage?.caption ??
+      ''
+    ).trim();
+    if (!text) return undefined;
+
+    const author = context?.participant ?? undefined;
+    const me = new Set([bareId(socket.user?.id), bareId(socket.user?.lid)].filter(Boolean));
+
+    return {
+      messageId: context?.stanzaId ?? undefined,
+      text,
+      senderId: author,
+      fromBot: author ? me.has(bareId(author)) : false,
+    };
   }
 
   private extractText(raw: WAMessage): string {

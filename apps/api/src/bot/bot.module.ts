@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BOT_CONFIG, loadBotConfig } from './bot.config.js';
 import { BotController } from './bot.controller.js';
+import { BotPipelineService } from './bot-pipeline.service.js';
 import { CommandRouterService } from './commands/command-router.service.js';
 import { DedupeService } from './dedupe.service.js';
 import { MessageLogService } from './message-log.service.js';
@@ -18,7 +19,8 @@ import { MessageLogService } from './message-log.service.js';
     { provide: DedupeService, useFactory: () => new DedupeService() },
     MessageLogService,
     CommandRouterService,
+    BotPipelineService,
   ],
-  exports: [CommandRouterService, DedupeService, MessageLogService, BOT_CONFIG],
+  exports: [CommandRouterService, BotPipelineService, DedupeService, MessageLogService, BOT_CONFIG],
 })
 export class BotModule {}

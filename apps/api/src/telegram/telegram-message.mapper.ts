@@ -67,6 +67,9 @@ export function mapTelegramMessage(
     (me.length > 0 && new RegExp(`@${me}\\b`, 'iu').test(text)) ||
     message.reply_to_message?.from?.username?.toLowerCase() === me;
 
+  const repliedTo = message.reply_to_message;
+  const quotedText = (repliedTo?.text ?? repliedTo?.caption ?? '').trim();
+
   return {
     channel: 'telegram',
     chatId: String(message.chat.id),
@@ -78,5 +81,13 @@ export function mapTelegramMessage(
     isGroup,
     mentionedMe,
     timestamp: new Date(message.date * 1000),
+    quoted: quotedText
+      ? {
+          messageId: repliedTo ? `${message.chat.id}:${repliedTo.message_id}` : undefined,
+          text: quotedText,
+          senderId: repliedTo?.from ? String(repliedTo.from.id) : undefined,
+          fromBot: repliedTo?.from?.is_bot === true,
+        }
+      : undefined,
   };
 }

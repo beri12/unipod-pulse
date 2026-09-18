@@ -7,6 +7,15 @@
  */
 export type BotChannel = 'whatsapp-cloud' | 'whatsapp-group' | 'telegram';
 
+/** The message this one replies to, when the sender quoted something. */
+export interface QuotedMessage {
+  messageId?: string;
+  text: string;
+  senderId?: string;
+  /** True when the quoted message was written by this bot. */
+  fromBot?: boolean;
+}
+
 export interface IncomingMessage {
   channel: BotChannel;
   /** Where a reply must be sent: a phone number, a JID, or a Telegram chat id. */
@@ -21,6 +30,13 @@ export interface IncomingMessage {
   /** True when the bot itself was @mentioned in the message. */
   mentionedMe: boolean;
   timestamp: Date;
+  /** Set when the sender replied to an earlier message. */
+  quoted?: QuotedMessage;
+  /**
+   * True when the sender is an admin of this group. Undefined when the
+   * transport could not determine it. Only admin answers are learned.
+   */
+  senderIsAdmin?: boolean;
 }
 
 export interface OutgoingReply {

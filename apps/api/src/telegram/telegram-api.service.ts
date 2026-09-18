@@ -35,6 +35,11 @@ export class TelegramApiService {
     );
   }
 
+  /** Group admins, used to decide whose answers are worth learning. */
+  getChatAdministrators(chatId: string): Promise<{ user: TelegramUser }[]> {
+    return this.call<{ user: TelegramUser }[]>('getChatAdministrators', { chat_id: chatId });
+  }
+
   async sendMessage(chatId: string, text: string): Promise<void> {
     await this.call('sendMessage', { chat_id: chatId, text });
   }

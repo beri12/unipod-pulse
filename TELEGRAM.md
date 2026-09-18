@@ -168,3 +168,11 @@ CHANNEL=telegram GROUP=1 ./scripts/fake-message.sh "/ping@UniPodPulseBot"
 | Bot silent in a group | Privacy mode: use `/command` or @mention it. |
 | `Conflict: terminated by other getUpdates` | Another copy of the bot is polling the same token, or a webhook is still registered. |
 | Nothing happens in private chat | Press **Start** in the chat first. |
+
+---
+
+## Answering questions automatically
+
+Beyond commands, the bot can learn answers from group admins and reply to the
+same question when it is asked again in different words — see
+[LEARNED-ANSWERS.md](LEARNED-ANSWERS.md).

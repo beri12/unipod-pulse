@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { FaqModule } from './faq/faq.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 import { WhatsappModule } from './whatsapp/whatsapp.module.js';
 
@@ -18,6 +19,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     WhatsappModule,
     TelegramModule,
+    FaqModule,
   ],
   controllers: [AppController],
   providers: [AppService],
