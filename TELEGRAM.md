@@ -171,8 +171,9 @@ CHANNEL=telegram GROUP=1 ./scripts/fake-message.sh "/ping@UniPodPulseBot"
 
 ---
 
-## Answering questions automatically
+## Answering questions from chats, calls and notes
 
-Beyond commands, the bot can learn answers from group admins and reply to the
-same question when it is asked again in different words — see
-[LEARNED-ANSWERS.md](LEARNED-ANSWERS.md).
+The bot learns from admin answers, imported call transcripts and notes, and
+answers members' questions from all of it — in any language, with the source
+shown. It says plainly when it does not know, and records the question for an
+organiser. See [KNOWLEDGE.md](KNOWLEDGE.md).

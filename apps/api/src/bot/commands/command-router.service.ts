@@ -91,10 +91,12 @@ export class CommandRouterService {
     // instead of answering that the word is unknown.
     if (isGreeting(name)) return { text: this.renderWelcome() };
 
-    // Not a command: it may be a question an admin has already answered.
+    // Not a command: it may be a question the community has already answered.
+    // The answerer gets the text WITHOUT the prefix or the "@bot" mention, so
+    // a recorded question reads the way a person would write it.
     if (this.answerer) {
       try {
-        const answer = await this.answerer(message);
+        const answer = await this.answerer({ ...message, text: body.trim() });
         if (answer) return { text: answer };
       } catch (error) {
         this.logger.error('The question answerer failed', error as Error);
