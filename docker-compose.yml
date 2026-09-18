@@ -1,7 +1,27 @@
 services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: unipod-pulse-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      # What the bot learns, and its WhatsApp login. Losing these means
+      # forgetting everything and scanning the QR again.
+      - ./data:/app/data
+      - ./wa-session:/app/wa-session
+    # Chromium needs more than Docker's default 64MB of shared memory.
+    shm_size: "1gb"
+    depends_on:
+      - postgres
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: unipods-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

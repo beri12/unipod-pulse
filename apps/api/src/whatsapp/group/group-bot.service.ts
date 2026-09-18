@@ -5,40 +5,43 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import type { WAMessage, WASocket } from '@whiskeysockets/baileys';
+import type { Client, GroupChat, Message } from 'whatsapp-web.js';
 import { BotPipelineService } from '../../bot/bot-pipeline.service.js';
+import type { IncomingAudio, IncomingMessage } from '../../bot/bot.types.js';
 import { DedupeService } from '../../bot/dedupe.service.js';
 import { WHATSAPP_CONFIG, type WhatsappConfig } from '../whatsapp.config.js';
-import type { IncomingMessage } from '../../bot/bot.types.js';
 
 const GROUP_SUFFIX = '@g.us';
-const RECONNECT_BASE_MS = 2000;
-const RECONNECT_MAX_MS = 60_000;
-/** How long to wait for a QR or a live connection before saying something. */
-const HANDSHAKE_WARN_MS = 30_000;
 /** How long a group's admin list is trusted before refetching. */
 const ADMIN_CACHE_MS = 5 * 60_000;
+/** How long to wait for a QR or a live connection before saying something. */
+const HANDSHAKE_WARN_MS = 60_000;
+const RETRY_BASE_MS = 10_000;
+const RETRY_MAX_MS = 5 * 60_000;
+/** Message types worth transcribing: a voice note, or an audio file. */
+const AUDIO_TYPES = new Set(['ptt', 'audio']);
 
-/** "212600000000:12@s.whatsapp.net" -> "212600000000" */
-const bareId = (jid?: string | null): string => jid?.split('@')[0]?.split(':')[0] ?? '';
+/** "212600000000@c.us" -> "212600000000" */
+const bareId = (id?: string | null): string => id?.split('@')[0]?.split(':')[0] ?? '';
 
 /**
- * Unofficial group bot, built on Baileys.
+ * WhatsApp group bot, built on whatsapp-web.js.
  *
- * This logs in as a LINKED DEVICE of a normal WhatsApp account (the same
- * mechanism as WhatsApp Web), which is how it can see group messages at all —
- * the official Cloud API cannot. It is against WhatsApp's Terms of Service and
- * the number can be banned, so use a dedicated SIM, never a personal one.
+ * It drives a real WhatsApp Web session in Chromium, logged in as a LINKED
+ * DEVICE of a normal account - the same thing you do when you open
+ * web.whatsapp.com. That is how it can see group messages at all; the official
+ * Cloud API cannot. It is against WhatsApp's Terms of Service and the number
+ * can be banned, so use a dedicated SIM, never a personal one.
  *
  * Disabled unless WHATSAPP_GROUP_BOT_ENABLED=true.
  */
 @Injectable()
 export class GroupBotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GroupBotService.name);
-  private socket?: WASocket;
-  private reconnectAttempts = 0;
-  private reconnectTimer?: NodeJS.Timeout;
+  private client?: Client;
   private handshakeTimer?: NodeJS.Timeout;
+  private retryTimer?: NodeJS.Timeout;
+  private retries = 0;
   private stopping = false;
   private readonly adminCache = new Map<string, { ids: Set<string>; fetchedAt: number }>();
 
@@ -53,190 +56,226 @@ export class GroupBotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('Group bot disabled (set WHATSAPP_GROUP_BOT_ENABLED=true to turn it on)');
       return;
     }
-    await this.connect();
+    await this.start();
+  }
+
+  /**
+   * WhatsApp being unreachable must never take the process down: Telegram, the
+   * webhooks and the knowledge endpoints keep working while this retries.
+   */
+  private async start(): Promise<void> {
+    try {
+      await this.connect();
+      this.retries = 0;
+    } catch (error) {
+      this.clearHandshakeWatchdog();
+      await this.client?.destroy().catch(() => undefined);
+      this.client = undefined;
+
+      this.logger.error(`Could not start WhatsApp Web: ${(error as Error).message}`);
+      this.scheduleRetry();
+    }
+  }
+
+  private scheduleRetry(): void {
+    if (this.stopping) return;
+
+    const delay = Math.min(RETRY_BASE_MS * 2 ** this.retries, RETRY_MAX_MS);
+    this.retries += 1;
+    this.logger.warn(`Retrying WhatsApp in ${Math.round(delay / 1000)}s`);
+
+    this.retryTimer = setTimeout(() => void this.start(), delay);
+    // Do not hold the process open just for a retry.
+    this.retryTimer.unref?.();
   }
 
   async onModuleDestroy(): Promise<void> {
     this.stopping = true;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
-    // `end` stops the socket without logging out, so the session stays valid
-    // and no QR rescan is needed on the next boot.
-    this.socket?.end(undefined);
+    this.clearHandshakeWatchdog();
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    // destroy() closes Chromium without logging out, so the session stays
+    // valid and no QR rescan is needed on the next boot.
+    await this.client?.destroy().catch(() => undefined);
   }
 
   private async connect(): Promise<void> {
-    // Imported lazily: Baileys is heavy and pulls in crypto/protobuf work that
-    // nothing else needs when the group bot is switched off.
-    const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } =
-      await import('@whiskeysockets/baileys');
+    // Imported lazily: whatsapp-web.js launches Chromium and pulls in
+    // Puppeteer, which nothing else needs when the group bot is off.
+    //
+    // It is CommonJS (`export = WAWebJS`), and Node's named-export detection
+    // finds `Client` but not `LocalAuth`, so take both off the module object.
+    const wwebjs = await import('whatsapp-web.js');
+    const { Client, LocalAuth } = wwebjs.default ?? wwebjs;
     const { default: qrcode } = await import('qrcode-terminal');
-    const { default: pino } = await import('pino');
 
-    const { state, saveCreds } = await useMultiFileAuthState(this.config.group.sessionPath);
-    const { version } = await fetchLatestBaileysVersion();
-
-    const socket = makeWASocket({
-      auth: state,
-      version,
-      browser: ['UniPod Pulse', 'Chrome', '1.0.0'],
-      // Baileys is chatty; its logs would drown the Nest ones.
-      logger: pino({ level: 'silent' }),
-      markOnlineOnConnect: false,
+    const client = new Client({
+      authStrategy: new LocalAuth({ dataPath: this.config.group.sessionPath }),
+      puppeteer: {
+        headless: true,
+        ...(this.config.group.chromePath ? { executablePath: this.config.group.chromePath } : {}),
+        // Required in containers, where Chromium's sandbox cannot start and
+        // /dev/shm is too small for it.
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      },
     });
-    this.socket = socket;
+    this.client = client;
     this.startHandshakeWatchdog();
 
-    socket.ev.on('creds.update', saveCreds);
-
-    socket.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      if (connection === 'connecting') {
-        this.logger.log('Connecting to WhatsApp...');
-      }
-
-      if (qr) {
-        this.clearHandshakeWatchdog();
-        this.logger.warn('Scan this QR in WhatsApp → Settings → Linked devices');
-        qrcode.generate(qr, { small: true });
-      }
-
-      if (connection === 'open') {
-        this.clearHandshakeWatchdog();
-        this.reconnectAttempts = 0;
-        this.logger.log(`Group bot connected as ${socket.user?.id ?? 'unknown'}`);
-      }
-
-      if (connection === 'close') {
-        const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output
-          ?.statusCode;
-
-        this.clearHandshakeWatchdog();
-
-        if (statusCode === DisconnectReason.loggedOut) {
-          this.logger.error(
-            `Logged out by WhatsApp. Delete "${this.config.group.sessionPath}" and scan the QR again.`,
-          );
-          return;
-        }
-        this.scheduleReconnect();
-      }
+    client.on('qr', (qr) => {
+      this.clearHandshakeWatchdog();
+      this.logger.warn('Scan this QR in WhatsApp -> Settings -> Linked devices');
+      qrcode.generate(qr, { small: true });
     });
 
-    socket.ev.on('messages.upsert', ({ messages, type }) => {
-      // "append" is history sync replaying old messages; answering those would
-      // make the bot reply to days-old chatter on every reconnect.
-      if (type !== 'notify') return;
-      for (const message of messages) {
-        void this.onMessage(message).catch((error) =>
-          this.logger.error('Failed to handle a group message', error as Error),
+    client.on('ready', () => {
+      this.clearHandshakeWatchdog();
+      this.logger.log(`Group bot connected as ${client.info?.wid?._serialized ?? 'unknown'}`);
+    });
+
+    client.on('auth_failure', (reason) => {
+      this.clearHandshakeWatchdog();
+      this.logger.error(
+        `Authentication failed (${reason}). Delete "${this.config.group.sessionPath}" and scan the QR again.`,
+      );
+    });
+
+    client.on('disconnected', (reason) => {
+      this.logger.warn(`Disconnected (${reason})`);
+      // whatsapp-web.js reconnects by itself unless the session was revoked,
+      // in which case a rescan is the only fix.
+      if (!this.stopping && String(reason).toUpperCase().includes('LOGOUT')) {
+        this.logger.error(
+          `Logged out by WhatsApp. Delete "${this.config.group.sessionPath}" and scan the QR again.`,
         );
       }
     });
-  }
 
-  /**
-   * Baileys can sit in "connecting" indefinitely when a network blocks its
-   * WebSocket (corporate proxies and locked-down containers do), and its own
-   * logger is silenced. Without this the bot just looks dead.
-   */
-  private startHandshakeWatchdog(): void {
-    this.clearHandshakeWatchdog();
-    this.handshakeTimer = setTimeout(() => {
-      this.logger.error(
-        'Still no QR code or connection after 30s. WhatsApp needs a direct WebSocket ' +
-          'to web.whatsapp.com — check that a proxy or firewall is not blocking it.',
+    client.on('message', (message) => {
+      void this.onMessage(message).catch((error) =>
+        this.logger.error('Failed to handle a WhatsApp message', error as Error),
       );
-    }, HANDSHAKE_WARN_MS);
+    });
+
+    this.logger.log('Starting WhatsApp Web (this takes a moment the first time)...');
+    await client.initialize();
   }
 
-  private clearHandshakeWatchdog(): void {
-    if (this.handshakeTimer) {
-      clearTimeout(this.handshakeTimer);
-      this.handshakeTimer = undefined;
-    }
-  }
+  private async onMessage(raw: Message): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    if (raw.fromMe) return; // never answer ourselves
 
-  private scheduleReconnect(): void {
-    if (this.stopping) return;
-
-    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempts, RECONNECT_MAX_MS);
-    this.reconnectAttempts += 1;
-    this.logger.warn(`Connection closed, reconnecting in ${Math.round(delay / 1000)}s`);
-
-    this.reconnectTimer = setTimeout(() => {
-      void this.connect().catch((error) => {
-        this.logger.error('Reconnect failed', error as Error);
-        this.scheduleReconnect();
-      });
-    }, delay);
-  }
-
-  private async onMessage(raw: WAMessage): Promise<void> {
-    const socket = this.socket;
-    if (!socket) return;
-    if (raw.key.fromMe) return; // never answer ourselves
-
-    const chatId = raw.key.remoteJid;
-    if (!chatId) return;
-
+    const chatId = raw.from;
     const isGroup = chatId.endsWith(GROUP_SUFFIX);
     const { allowedGroups } = this.config.group;
     if (isGroup && allowedGroups.length > 0 && !allowedGroups.includes(chatId)) return;
 
-    const text = this.extractText(raw);
-    if (!text) return;
+    const messageId = raw.id?._serialized ?? '';
+    if (messageId && !this.dedupe.markIfNew(`whatsapp:${messageId}`)) return;
 
-    const messageId = raw.key.id ?? '';
-    if (messageId && !this.dedupe.markIfNew(`group:${messageId}`)) return;
+    const audio = AUDIO_TYPES.has(raw.type) ? await this.downloadAudio(raw) : undefined;
+    const text = raw.body?.trim() ?? '';
+    if (!text && !audio) return;
 
-    const quoted = this.extractQuote(raw, socket);
-    const senderId = isGroup ? (raw.key.participant ?? chatId) : chatId;
+    const senderId = isGroup ? (raw.author ?? chatId) : chatId;
+    const me = bareId(client.info?.wid?._serialized);
 
     const message: IncomingMessage = {
       channel: 'whatsapp-group',
       chatId,
       senderId,
-      senderName: raw.pushName ?? undefined,
+      senderName: await this.senderName(raw),
       messageId,
       text,
       isGroup,
-      mentionedMe: this.isMentioned(raw, socket),
-      timestamp: new Date(Number(raw.messageTimestamp ?? 0) * 1000),
-      quoted,
-      senderIsAdmin: isGroup ? await this.isAdmin(chatId, senderId) : undefined,
+      mentionedMe: (raw.mentionedIds ?? []).some((id) => bareId(id) === me),
+      timestamp: new Date((raw.timestamp ?? 0) * 1000),
+      quoted: await this.extractQuote(raw, me),
+      senderIsAdmin: isGroup ? await this.isAdmin(raw, senderId) : undefined,
+      audio,
     };
 
     const reply = await this.pipeline.handle(message);
     if (!reply) return;
 
-    await socket.readMessages([raw.key]);
-    await socket.sendPresenceUpdate('composing', chatId);
+    const chat = await raw.getChat();
+    await chat.sendSeen();
+    await chat.sendStateTyping();
     // A pause so replies do not land instantly one after another.
     await this.sleep(this.config.group.replyDelayMs);
-    await socket.sendMessage(chatId, { text: reply.text }, { quoted: raw });
+    await raw.reply(reply.text);
+  }
+
+  private async senderName(raw: Message): Promise<string | undefined> {
+    try {
+      const contact = await raw.getContact();
+      return contact.pushname || contact.name || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async downloadAudio(raw: Message): Promise<IncomingAudio | undefined> {
+    try {
+      const media = await raw.downloadMedia();
+      if (!media?.data) return undefined;
+
+      return {
+        data: Buffer.from(media.data, 'base64'),
+        // WhatsApp voice notes are opus in an ogg container; the extension is
+        // what tells the transcription API how to decode them.
+        filename: media.filename ?? (raw.type === 'ptt' ? 'voice.ogg' : 'audio.mp3'),
+        durationSeconds: Number(raw.duration) || undefined,
+      };
+    } catch (error) {
+      this.logger.warn(`Could not download audio: ${(error as Error).message}`);
+      return undefined;
+    }
+  }
+
+  private async extractQuote(
+    raw: Message,
+    me: string,
+  ): Promise<IncomingMessage['quoted'] | undefined> {
+    if (!raw.hasQuotedMsg) return undefined;
+
+    try {
+      const quoted = await raw.getQuotedMessage();
+      const text = quoted.body?.trim();
+      if (!text) return undefined;
+
+      const author = quoted.author ?? quoted.from;
+      return {
+        messageId: quoted.id?._serialized,
+        text,
+        senderId: author,
+        fromBot: quoted.fromMe || bareId(author) === me,
+      };
+    } catch (error) {
+      this.logger.warn(`Could not read the quoted message: ${(error as Error).message}`);
+      return undefined;
+    }
   }
 
   /**
-   * @returns true or false when known, undefined when the group metadata could
-   * not be read — the caller must not treat "unknown" as "admin".
+   * @returns true or false when known, undefined when the group could not be
+   * read - the caller must not treat "unknown" as "admin".
    */
-  private async isAdmin(chatId: string, senderId: string): Promise<boolean | undefined> {
+  private async isAdmin(raw: Message, senderId: string): Promise<boolean | undefined> {
+    const chatId = raw.from;
     const cached = this.adminCache.get(chatId);
     if (cached && Date.now() - cached.fetchedAt < ADMIN_CACHE_MS) {
       return cached.ids.has(bareId(senderId));
     }
 
     try {
-      const metadata = await this.socket?.groupMetadata(chatId);
-      if (!metadata) return undefined;
+      const chat = (await raw.getChat()) as GroupChat;
+      if (!chat.isGroup) return undefined;
 
       const ids = new Set(
-        metadata.participants
-          // "admin" and "superadmin"; a plain member has no admin field.
-          .filter((participant) => Boolean(participant.admin))
-          .flatMap((participant) => [bareId(participant.id), bareId(participant.lid)])
+        chat.participants
+          .filter((participant) => participant.isAdmin || participant.isSuperAdmin)
+          .map((participant) => bareId(participant.id?._serialized))
           .filter(Boolean),
       );
       this.adminCache.set(chatId, { ids, fetchedAt: Date.now() });
@@ -247,50 +286,25 @@ export class GroupBotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private extractQuote(raw: WAMessage, socket: WASocket): IncomingMessage['quoted'] {
-    const context = raw.message?.extendedTextMessage?.contextInfo;
-    const quoted = context?.quotedMessage;
-    if (!quoted) return undefined;
-
-    const text = (
-      quoted.conversation ??
-      quoted.extendedTextMessage?.text ??
-      quoted.imageMessage?.caption ??
-      quoted.videoMessage?.caption ??
-      ''
-    ).trim();
-    if (!text) return undefined;
-
-    const author = context?.participant ?? undefined;
-    const me = new Set([bareId(socket.user?.id), bareId(socket.user?.lid)].filter(Boolean));
-
-    return {
-      messageId: context?.stanzaId ?? undefined,
-      text,
-      senderId: author,
-      fromBot: author ? me.has(bareId(author)) : false,
-    };
+  /**
+   * whatsapp-web.js can sit silently while Chromium fails to start or the
+   * network blocks web.whatsapp.com. Without this the bot just looks dead.
+   */
+  private startHandshakeWatchdog(): void {
+    this.clearHandshakeWatchdog();
+    this.handshakeTimer = setTimeout(() => {
+      this.logger.error(
+        'Still no QR code or connection after 60s. Check that Chromium can start ' +
+          '(set WHATSAPP_CHROME_PATH) and that web.whatsapp.com is reachable.',
+      );
+    }, HANDSHAKE_WARN_MS);
   }
 
-  private extractText(raw: WAMessage): string {
-    const content = raw.message;
-    return (
-      content?.conversation ??
-      content?.extendedTextMessage?.text ??
-      content?.imageMessage?.caption ??
-      content?.videoMessage?.caption ??
-      ''
-    );
-  }
-
-  private isMentioned(raw: WAMessage, socket: WASocket): boolean {
-    const mentioned = raw.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
-    if (mentioned.length === 0) return false;
-
-    // Newer accounts are addressed by their LID rather than their phone JID,
-    // so check both identities.
-    const me = new Set([bareId(socket.user?.id), bareId(socket.user?.lid)].filter(Boolean));
-    return mentioned.some((jid) => me.has(bareId(jid)));
+  private clearHandshakeWatchdog(): void {
+    if (this.handshakeTimer) {
+      clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = undefined;
+    }
   }
 
   private sleep(ms: number): Promise<void> {

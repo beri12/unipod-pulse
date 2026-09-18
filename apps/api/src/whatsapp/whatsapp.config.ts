@@ -19,6 +19,8 @@ export interface WhatsappConfig {
     allowedGroups: string[];
     /** Human-like pause before replying, in ms. */
     replyDelayMs: number;
+    /** Chromium binary for whatsapp-web.js; empty lets Puppeteer choose. */
+    chromePath: string;
   };
 }
 
@@ -51,6 +53,7 @@ export function loadWhatsappConfig(env: NodeJS.ProcessEnv = process.env): Whatsa
       sessionPath: env.WHATSAPP_SESSION_PATH ?? './wa-session',
       allowedGroups: list(env.WHATSAPP_ALLOWED_GROUPS),
       replyDelayMs: Number(env.WHATSAPP_REPLY_DELAY_MS ?? 1200),
+      chromePath: env.WHATSAPP_CHROME_PATH ?? env.PUPPETEER_EXECUTABLE_PATH ?? '',
     },
   };
 }

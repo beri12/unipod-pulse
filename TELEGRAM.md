@@ -142,7 +142,7 @@ CHANNEL=telegram GROUP=1 ./scripts/fake-message.sh "/ping@UniPodPulseBot"
 
 ## WhatsApp vs Telegram
 
-| | WhatsApp official | WhatsApp Baileys | Telegram |
+| | WhatsApp official | WhatsApp Web bot | Telegram |
 |---|---|---|---|
 | Private chats | ✅ | ✅ | ✅ |
 | **Groups** | ❌ never | ⚠️ yes, unofficial | ✅ **yes, official** |

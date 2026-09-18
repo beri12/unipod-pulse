@@ -6,7 +6,7 @@
 ```
   WhatsApp Cloud API (official)  ─┐
    private chats only             │
-  WhatsApp Baileys bot           ─┼─>  CommandRouterService  ─>  reply
+  WhatsApp Web bot               ─┼─>  CommandRouterService  ─>  reply
    groups + private, unofficial   │
   Telegram (official)            ─┘
    groups + private
@@ -14,7 +14,7 @@
 
 > **Important:** the official WhatsApp Cloud API **cannot read or write in
 > groups**. Meta does not allow it. If you want the bot inside your WhatsApp
-> groups, that is part 2 (Baileys) — not part 1.
+> groups, that is part 2 (whatsapp-web.js) — not part 1.
 
 ---
 
@@ -129,13 +129,17 @@ local curl testing, set it in production.
 
 ---
 
-## 2. Group bot (Baileys) — this is the one for your groups
+## 2. Group bot (whatsapp-web.js) — this is the one for your groups
 
 ### How it works
 
-It logs in as a **linked device** of a normal WhatsApp account, exactly like
-WhatsApp Web. That is why it can see group messages when the official API
-cannot.
+It runs a **real WhatsApp Web session in Chromium** (whatsapp-web.js), logged
+in as a linked device of a normal WhatsApp account — exactly what you do when
+you open web.whatsapp.com. That is why it can see group messages when the
+official API cannot.
+
+It needs a browser, so the machine needs Chromium (the Docker image ships
+one). Expect roughly 400 MB of memory for it.
 
 **Read this before using it:** this is against WhatsApp's Terms of Service and
 the number can be banned without warning. Use a **dedicated SIM**, never your
@@ -161,9 +165,12 @@ delete that folder or you will have to scan again.
 Then add the bot's number to your group like a normal member and type `!ping`.
 
 **If no QR appears:** after 30 seconds you get
-`Still no QR code or connection after 30s`. Baileys needs a direct WebSocket to
+`Still no QR code or connection after 60s`. The bot drives WhatsApp Web in
+Chromium, so it needs both a browser that can start and a reachable
 `web.whatsapp.com`; a corporate proxy, a VPN or a locked-down container will
-block it. Run it somewhere with normal outbound network access.
+block it. Set `WHATSAPP_CHROME_PATH` if Chromium lives somewhere unusual.
+A failure here never stops the rest of the bot — Telegram and the API keep
+working while WhatsApp retries in the background.
 
 ### Limit it to certain groups
 
