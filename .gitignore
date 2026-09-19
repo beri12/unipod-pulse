@@ -1,2 +1,7 @@
 wa-session/
 data/
+apps/recallai/.venv/
+apps/recallai/data/
+apps/recallai/.pytest_cache/
+__pycache__/
+*.pyc

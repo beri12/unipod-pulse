@@ -1,0 +1,93 @@
+name: recallai
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recallai-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://recallai:recallai@postgres:5432/recallai
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recallai-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://recallai:recallai@postgres:5432/recallai
+      REDIS_URL: redis://redis:6379/0
+    # Transcription belongs here, never inside an HTTP request.
+    command: ["python", "-m", "app.workers.main"]
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: recallai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: recallai
+      POSTGRES_PASSWORD: recallai
+      POSTGRES_DB: recallai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recallai -d recallai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: recallai-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Optional: local models. Start it with `docker compose --profile local up`.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: recallai-ollama
+    restart: unless-stopped
+    profiles: ["local"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  ollama_models:
+  uploads:
