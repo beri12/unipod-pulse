@@ -9,15 +9,30 @@ import { WhatsappModule } from './whatsapp/whatsapp.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
+const observeAppKey = process.env.OBSERVE_APP_KEY ?? '';
+const observeAppSecret = process.env.OBSERVE_APP_SECRET ?? '';
+
+/**
+ * Hosted telemetry (https://observe.nestjs.com) — off unless real credentials
+ * are given.
+ *
+ * The NestJS starter ships placeholder credentials. Left in place they make
+ * the telemetry agent retry against a 401 forever, which it reports once and
+ * then counts silently, so the logs fill with a failure nobody asked for.
+ */
+export const observeEnabled = Boolean(observeAppKey && observeAppSecret);
+
 @Module({
   imports: [
-    // Distributed tracing, auto-correlated logs, request/job metrics, error
-    // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
-    ObserveModule.forRoot({
-      appKey: 'YOUR_APP_KEY',
-      appSecret: 'YOUR_APP_SECRET',
-      serviceId: 'api',
-    }),
+    ...(observeEnabled
+      ? [
+          ObserveModule.forRoot({
+            appKey: observeAppKey,
+            appSecret: observeAppSecret,
+            serviceId: process.env.OBSERVE_SERVICE_ID ?? 'api',
+          }),
+        ]
+      : []),
     WhatsappModule,
     TelegramModule,
     KnowledgeModule,
